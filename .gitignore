@@ -1,0 +1,66 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and local Python tooling
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# ROS 2 / colcon build products
+build/
+install/
+log/
+.colcon/
+
+# CMake / native plugin build products
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile
+*.o
+*.so
+*.a
+*.d
+*.bin
+resources/plugins/led_controller/build/
+
+# PX4, Gazebo, and simulation runtime state
+*.ulg
+*.bag
+*.db3
+*.mcap
+*.log
+*.tlog
+*.px4log
+gzserver.log
+gzclient.log
+.ros/
+.gazebo/
+
+# Generated media and local experiment output
+captures/
+recordings/
+screenshots/
+outputs/
+tmp/
+temp/
+
+# IDE, editor, and OS metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
