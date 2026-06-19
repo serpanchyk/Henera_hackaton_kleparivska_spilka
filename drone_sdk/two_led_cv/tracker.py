@@ -18,10 +18,11 @@ class _PairCandidate:
 class TwoLedTracker:
     """Track the leader midpoint from two visible LED blobs.
 
-    LED 1 and LED 4 are visually identical green blobs. Until the image stream
-    carries a distinct LED identity, the anchor is chosen deterministically as
-    the leftmost blob, with topmost as a tie-breaker. The resulting vector is an
-    image-only convention used for stable fallback when LED 4 blinks OFF.
+    This tracker is the green-only fallback used by the older debug detector.
+    When blobs do not carry distinct color identity, the anchor is chosen
+    deterministically as the leftmost blob, with topmost as a tie-breaker. The
+    resulting vector is an image-only convention used for stable fallback when
+    the signal LED blinks OFF.
     """
 
     def __init__(

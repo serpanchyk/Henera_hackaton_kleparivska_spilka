@@ -72,7 +72,7 @@ Suggested baseline:
 - limited colors/channels and blink frequencies;
 - no unlimited auxiliary markers that turn the task into direct localization.
 
-This repository currently models four green LED lenses per drone. The Gazebo plugin accepts four-character binary masks such as `1000`, `0100`, `0010`, `0001`, plus `ON`, `OFF`, and `BLINK`.
+This repository currently models two LED lenses per drone. The Gazebo plugin still accepts four-character binary masks for SDK compatibility: bit 1 controls the green anchor lens, bit 2 controls the red signal lens, and bits 3-4 are unused by the current model. It also accepts `ON`, `OFF`, and `BLINK` legacy commands.
 
 ## Minimum Protocol Requirements
 

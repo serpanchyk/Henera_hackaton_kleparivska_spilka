@@ -28,7 +28,7 @@ async def show_position(drone: Drone, label: str):
 
 
 async def led_pattern(drone: Drone, shutdown: asyncio.Event):
-    masks = ['1000', '0100', '0010', '0001']
+    masks = ['1000', '1100']
     while not shutdown.is_set():
         for mask in masks:
             if shutdown.is_set():

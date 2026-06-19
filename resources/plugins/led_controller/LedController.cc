@@ -55,7 +55,20 @@ void LedController::Configure(
         return;
     }
 
-    gzmsg << "LedController loaded for " << modelName << " with binary string support." << std::endl;
+    gzmsg << "LedController loaded for " << modelName
+          << " with " << foundLenses.size() << " lens visual(s): ";
+    for (size_t i = 0; i < foundLenses.size(); ++i) {
+        if (i > 0) {
+            gzmsg << ", ";
+        }
+        gzmsg << foundLenses[i].first;
+        if (i == 0) {
+            gzmsg << "=mask[0]/green anchor";
+        } else if (i == 1) {
+            gzmsg << "=mask[1]/red signal";
+        }
+    }
+    gzmsg << std::endl;
 }
 
 void LedController::OnLedCmd(const gz::msgs::StringMsg &_msg)

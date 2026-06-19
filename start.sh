@@ -9,6 +9,8 @@ pkill -9 -f "gz sim" 2>/dev/null || true
 pkill -9 -f "gazebo" 2>/dev/null || true
 pkill -9 -f "follower.py" 2>/dev/null || true
 pkill -9 -f "mission_launch.py" 2>/dev/null || true
+pkill -9 -f "parameter_bridge" 2>/dev/null || true
+pkill -9 -f "image_bridge" 2>/dev/null || true
 sleep 2
 echo "[start] Done killing."
 
