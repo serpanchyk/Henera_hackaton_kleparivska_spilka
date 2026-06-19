@@ -139,3 +139,70 @@ Arguments:
 - `file:=blink.json`: JSON pattern file in the script directory.
 - `point:=my_custom_point`: named pattern section in the JSON file.
 
+## Two-LED CV Debug Runner
+
+`resources/scripts/two_led_cv_debug.py` runs the perception-only two-LED pipeline:
+
+1. read camera, webcam, video, or image frames;
+2. detect green LED blobs;
+3. update `TwoLedCommandDecoder`;
+4. update `TwoLedTracker`;
+5. draw a debug overlay and print throttled observations.
+
+It does not connect to MAVSDK, publish flight commands, or move drones.
+
+Start the simulation first:
+
+```bash
+cd ~/PX4-Autopilot
+source ~/falcon_gaze/resources/scripts/px4_gz_setup.sh
+source /opt/ros/humble/setup.bash
+ros2 launch ~/falcon_gaze/resources/scripts/swarn_launch.py
+```
+
+In another ROS-sourced terminal, list camera topics:
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 topic list | grep camera_sensor
+```
+
+If the camera topic is not visible in ROS, bridge it from Gazebo:
+
+```bash
+ros2 run ros_gz_image image_bridge \
+  /world/baylands_custom/model/x500_mono_cam_1/link/mono_cam/base_link/sensor/camera_sensor/image
+```
+
+Run the debug script against a follower camera topic:
+
+```bash
+python3 resources/scripts/two_led_cv_debug.py \
+  --source ros:/world/baylands_custom/model/x500_mono_cam_1/link/mono_cam/base_link/sensor/camera_sensor/image \
+  --debug \
+  --show-mask
+```
+
+Offline fallback modes:
+
+```bash
+python3 resources/scripts/two_led_cv_debug.py --source 0 --debug
+python3 resources/scripts/two_led_cv_debug.py --source ./sample_video.mp4 --debug
+python3 resources/scripts/two_led_cv_debug.py --source ./sample_frame.png --debug --show-mask
+```
+
+Test leader LED masks directly with Gazebo:
+
+```bash
+gz topic -t /model/x500_mono_cam_0/led_cmd -m gz.msgs.StringMsg -p 'data:"1001"'
+```
+
+Expected result: both modeled LEDs are visible, LED 1 and LED 4 ON.
+
+```bash
+gz topic -t /model/x500_mono_cam_0/led_cmd -m gz.msgs.StringMsg -p 'data:"1000"'
+```
+
+Expected result: only the anchor LED is visible, LED 1 ON and LED 4 OFF.
+
+The overlay shows detected green contours, LED blob centers, selected pair line, midpoint or estimated midpoint, `x_error`, `y_error`, `led_distance_px`, decoded `state`, `signal_on_ratio`, and `transitions_per_s`.
