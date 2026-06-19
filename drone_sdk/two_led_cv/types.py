@@ -16,6 +16,7 @@ class TwoLedObservation:
     y_error: float | None
     led_distance_px: float | None
     pair_angle_rad: float | None
+    estimated_range_m: float | None
     anchor_visible: bool
     signal_visible: bool
     state: str

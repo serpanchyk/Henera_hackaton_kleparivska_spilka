@@ -13,6 +13,7 @@ from .protocol import (
     signal_on_for_state,
 )
 from .green_detector import GreenLedDetector, draw_debug
+from .tracker import TwoLedTracker
 from .types import LedBlob, TwoLedObservation
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     'SAFE_MASK',
     'SIGNAL_LED_INDEX',
     'TwoLedObservation',
+    'TwoLedTracker',
     'UNKNOWN',
     'draw_debug',
     'make_led_mask',
