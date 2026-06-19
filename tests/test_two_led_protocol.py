@@ -20,7 +20,7 @@ signal_on_for_state = protocol.signal_on_for_state
 class TwoLedProtocolTests(unittest.TestCase):
 
     def test_make_led_mask_anchor_and_signal_on(self):
-        self.assertEqual(make_led_mask(True, True), '1001')
+        self.assertEqual(make_led_mask(True, True), '1100')
 
     def test_make_led_mask_anchor_on_signal_off(self):
         self.assertEqual(make_led_mask(True, False), '1000')

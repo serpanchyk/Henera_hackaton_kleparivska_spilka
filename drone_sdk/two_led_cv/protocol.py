@@ -1,8 +1,11 @@
+# Masks stay 4 chars (4 positions), but the model has only 2 lenses and the
+# plugin reads the first 2 mask bits: position 1 -> led_lens_01 (green anchor),
+# position 2 -> led_lens_04 (red signal). Positions 3/4 are unused.
 LED_COUNT = 4
 ANCHOR_LED_INDEX = 1
-SIGNAL_LED_INDEX = 4
+SIGNAL_LED_INDEX = 2
 
-FOLLOW_MASK = '1001'
+FOLLOW_MASK = '1100'
 SAFE_MASK = '1000'
 
 FOLLOW = 'FOLLOW'

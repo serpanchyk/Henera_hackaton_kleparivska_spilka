@@ -18,8 +18,12 @@ class BridgeManager:
         if self._camera_bridge is not None:
             return
         topic = CAMERA_TOPIC.format(self._drone_id)
+        # Use ros_gz_bridge parameter_bridge (Gazebo Harmonic-compatible) instead of
+        # ros_gz_image image_bridge — the latter is only packaged for Gazebo Fortress
+        # on Humble and pulls in conflicting ignition libs. '[' = gz -> ROS direction.
+        bridge_arg = f"'{topic}@sensor_msgs/msg/Image[gz.msgs.Image'"
         self._camera_bridge = subprocess.Popen(
-            ['ros2', 'run', 'ros_gz_image', 'image_bridge', topic],
+            ['bash', '-c', f'ros2 run ros_gz_bridge parameter_bridge {bridge_arg}'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
 

@@ -36,9 +36,7 @@ Movement sequence:
 LED pattern:
 
 - `1000`
-- `0100`
-- `0010`
-- `0001`
+- `1100`
 - `BLINK`
 
 ## `examples/swarm_velocities.py`
@@ -116,9 +114,9 @@ Example pattern file:
       "delay_time": 0.25,
       "loop": true,
       "timeline": [
-        {"mask": "1010", "ticks": 4},
+        {"mask": "1100", "ticks": 4},
         {"mask": "0000", "ticks": 4},
-        {"mask": "0101", "ticks": 2}
+        {"mask": "1000", "ticks": 2}
       ]
     }
   }
@@ -144,7 +142,7 @@ Arguments:
 `resources/scripts/two_led_cv_debug.py` runs the perception-only two-LED pipeline:
 
 1. read camera, webcam, video, or image frames;
-2. detect green LED blobs;
+2. detect the green anchor and red signal LEDs;
 3. update `TwoLedCommandDecoder`;
 4. update `TwoLedTracker`;
 5. draw a debug overlay and print throttled observations.
@@ -194,15 +192,15 @@ python3 resources/scripts/two_led_cv_debug.py --source ./sample_frame.png --debu
 Test leader LED masks directly with Gazebo:
 
 ```bash
-gz topic -t /model/x500_mono_cam_0/led_cmd -m gz.msgs.StringMsg -p 'data:"1001"'
+gz topic -t /model/x500_mono_cam_0/led_cmd -m gz.msgs.StringMsg -p 'data:"1100"'
 ```
 
-Expected result: both modeled LEDs are visible, LED 1 and LED 4 ON.
+Expected result: both modeled LEDs are visible, with the anchor green and signal red.
 
 ```bash
 gz topic -t /model/x500_mono_cam_0/led_cmd -m gz.msgs.StringMsg -p 'data:"1000"'
 ```
 
-Expected result: only the anchor LED is visible, LED 1 ON and LED 4 OFF.
+Expected result: only the green anchor LED is visible, with the red signal LED OFF.
 
-The overlay shows detected green contours, LED blob centers, selected pair line, midpoint or estimated midpoint, `x_error`, `y_error`, `led_distance_px`, decoded `state`, `signal_on_ratio`, and `transitions_per_s`.
+The overlay shows detected contours, LED blob centers, selected pair line, midpoint or estimated midpoint, `x_error`, `y_error`, `led_distance_px`, decoded `state`, `signal_on_ratio`, and `transitions_per_s`.

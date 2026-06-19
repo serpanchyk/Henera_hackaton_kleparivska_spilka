@@ -146,12 +146,12 @@ drone.led_blink()
 
 Supported command forms in the current Gazebo plugin:
 
-- four-character binary masks: `1000`, `0100`, `0010`, `0001`, `1010`, etc.;
+- four-character binary masks: `1100`, `1000`, etc.;
 - `ON`;
 - `OFF`;
 - `BLINK`.
 
-Binary masks map each character to one of the four LED lenses. `1` makes that lens green, `0` turns it off.
+For the current two-lens model, mask bit 1 controls `led_lens_01` as the green anchor and mask bit 2 controls `led_lens_04` as the red signal. Bits 3 and 4 are unused. Use `1100` for green anchor plus red signal, and `1000` for green anchor only.
 
 ## Camera
 

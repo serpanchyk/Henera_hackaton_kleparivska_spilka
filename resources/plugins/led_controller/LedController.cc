@@ -55,7 +55,20 @@ void LedController::Configure(
         return;
     }
 
-    gzmsg << "LedController loaded for " << modelName << " with binary string support." << std::endl;
+    gzmsg << "LedController loaded for " << modelName
+          << " with " << foundLenses.size() << " lens visual(s): ";
+    for (size_t i = 0; i < foundLenses.size(); ++i) {
+        if (i > 0) {
+            gzmsg << ", ";
+        }
+        gzmsg << foundLenses[i].first;
+        if (i == 0) {
+            gzmsg << "=mask[0]/green anchor";
+        } else if (i == 1) {
+            gzmsg << "=mask[1]/red signal";
+        }
+    }
+    gzmsg << std::endl;
 }
 
 void LedController::OnLedCmd(const gz::msgs::StringMsg &_msg)
@@ -96,15 +109,20 @@ void LedController::PreUpdate(
     }
 
     gz::math::Color greenColor(0.0f, 1.0f, 0.0f, 1.0f);
+    gz::math::Color redColor(1.0f, 0.0f, 0.0f, 1.0f);
     gz::math::Color offColor(0.0f, 0.0f, 0.0f, 0.0f);
 
     // --- NEW BINARY MASK PARSER LOGIC ---
-    if (cmd.length() == 4 && (cmd[0] == '1' || cmd[0] == '0')) 
+    if (cmd.length() == 4 && (cmd[0] == '1' || cmd[0] == '0'))
     {
-        // Parse individual states based on the binary mask string positions
-        for (size_t i = 0; i < this->ledVisualEntities.size() && i < 4; ++i) 
+        // Parse individual states based on the binary mask string positions.
+        // Lenses are sorted by name: index 0 = led_lens_01 (anchor, GREEN),
+        // index 1 = led_lens_04 (signal, RED). Distinct colours let the CV
+        // pipeline tell anchor from signal even when they overlap.
+        for (size_t i = 0; i < this->ledVisualEntities.size() && i < 4; ++i)
         {
-            gz::math::Color targetedColor = (cmd[i] == '1') ? greenColor : offColor;
+            gz::math::Color onColor = (i == 1) ? redColor : greenColor;
+            gz::math::Color targetedColor = (cmd[i] == '1') ? onColor : offColor;
             this->UpdateVisualState(this->ledVisualEntities[i], targetedColor, _ecm);
         }
     }

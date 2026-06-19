@@ -16,9 +16,11 @@ from .decoder import LedSample, TwoLedCommandDecoder, demo_generated_timestamps
 from .green_detector import GreenLedDetector, draw_debug
 from .tracker import TwoLedTracker
 from .types import LedBlob, TwoLedObservation
+from .adapter import two_led_to_visual
 
 __all__ = [
     'ANCHOR_LED_INDEX',
+    'two_led_to_visual',
     'FINISH',
     'FOLLOW',
     'FOLLOW_MASK',
