@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import math
 import time
 from dataclasses import dataclass
@@ -10,6 +10,7 @@ class MissionState(str, Enum):
     FOLLOW = 'FOLLOW'
     HOLD = 'HOLD'
     FINISH = 'FINISH'
+    SAFE = 'SAFE'
 
 
 class FollowerState(str, Enum):
@@ -136,6 +137,14 @@ class FollowerController:
         if mission_state == MissionState.FINISH:
             self.state = FollowerState.FINISH
             self._last_command = self._finish_command()
+            return self._last_command
+
+        if mission_state == MissionState.SAFE:
+            self.state = FollowerState.HOLD
+            self._valid_frames = 0
+            self._lost_frames = 0
+            self._lost_since = None
+            self._last_command = self._zero_command(FollowerState.HOLD, MissionState.SAFE)
             return self._last_command
 
         if not known_state or mission_state == MissionState.HOLD:
@@ -441,6 +450,8 @@ class MockVisualProvider:
             return VisualObservation(True, 0.0, 0.0, 70.0, MissionState.FOLLOW, timestamp - 1000.0)
         if name == 'hold':
             return VisualObservation(True, 0.0, 0.0, 70.0, MissionState.HOLD, timestamp)
+        if name == 'safe':
+            return VisualObservation(True, 0.0, 0.0, 70.0, MissionState.SAFE, timestamp)
         if name == 'finish':
             return VisualObservation(True, 0.0, 0.0, 70.0, MissionState.FINISH, timestamp)
         if name == 'reacquire':

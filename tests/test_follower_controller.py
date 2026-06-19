@@ -1,4 +1,4 @@
-﻿import importlib.util
+import importlib.util
 import math
 import sys
 from pathlib import Path
@@ -148,6 +148,29 @@ class FollowerControllerTests(unittest.TestCase):
         self.assertEqual(cmd.forward_m_s, 0.0)
         self.assertEqual(cmd.down_m_s, 0.0)
         self.assertEqual(cmd.yaw_rate_deg_s, 0.0)
+
+
+    def test_safe_has_priority_and_relays_safe(self):
+        cmd = controller().update(
+            obs(h=20.0, v=20.0, size=1.0, state=MissionState.SAFE),
+            current_time=0.0,
+        )
+        self.assertEqual(cmd.state, FollowerState.HOLD)
+        self.assertEqual(cmd.relay_state, MissionState.SAFE)
+        self.assertEqual(cmd.forward_m_s, 0.0)
+        self.assertEqual(cmd.down_m_s, 0.0)
+        self.assertEqual(cmd.yaw_rate_deg_s, 0.0)
+
+    def test_safe_is_not_terminal_and_recovers_after_follow_reacquire(self):
+        c = controller(reacquire_frames=2)
+        safe = c.update(obs(state=MissionState.SAFE), current_time=0.0)
+        first_follow = c.update(obs(t=0.1), current_time=0.1)
+        second_follow = c.update(obs(t=0.2), current_time=0.2)
+        self.assertEqual(safe.relay_state, MissionState.SAFE)
+        self.assertEqual(first_follow.state, FollowerState.HOLD)
+        self.assertEqual(first_follow.relay_state, MissionState.HOLD)
+        self.assertEqual(second_follow.state, FollowerState.FOLLOW)
+        self.assertEqual(second_follow.relay_state, MissionState.FOLLOW)
 
     def test_finish_has_priority_and_is_terminal(self):
         c = controller()
