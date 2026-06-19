@@ -1,4 +1,4 @@
-﻿from .drone import Drone, PositionNED
+from .drone import Drone, PositionNED
 from .exceptions import (
     DroneSDKError,
     ConnectionError,
@@ -13,6 +13,8 @@ from .follower_controller import (
     FollowerState,
     VisualObservation,
     FollowerControllerConfig,
+    FollowerStartupConfig,
+    FollowerStartupError,
     FollowerCommand,
     ChainLinkConfig,
     FollowerController,
@@ -20,6 +22,8 @@ from .follower_controller import (
     DroneFollowerActuator,
     build_chain_config,
     normalize_mission_state,
+    prepare_followers_for_chain,
+    safe_stop_all,
     run_follower_controller,
 )
 
@@ -37,6 +41,8 @@ __all__ = [
     'FollowerState',
     'VisualObservation',
     'FollowerControllerConfig',
+    'FollowerStartupConfig',
+    'FollowerStartupError',
     'FollowerCommand',
     'ChainLinkConfig',
     'FollowerController',
@@ -44,5 +50,7 @@ __all__ = [
     'DroneFollowerActuator',
     'build_chain_config',
     'normalize_mission_state',
+    'prepare_followers_for_chain',
+    'safe_stop_all',
     'run_follower_controller',
 ]

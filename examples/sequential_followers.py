@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Sequential follower-chain MVP demo.
 
@@ -10,6 +10,8 @@ Run:
   python3 examples/sequential_followers.py
 """
 
+import asyncio
+from dataclasses import replace
 import importlib.util
 import os
 import sys
@@ -21,9 +23,12 @@ try:
     from drone_sdk import (
         FollowerController,
         FollowerControllerConfig,
+        FollowerStartupConfig,
         MissionState,
         VisualObservation,
         build_chain_config,
+        prepare_followers_for_chain,
+        safe_stop_all,
     )
 except ModuleNotFoundError:
     module_path = Path(__file__).resolve().parents[1] / 'drone_sdk' / 'follower_controller.py'
@@ -33,9 +38,12 @@ except ModuleNotFoundError:
     spec.loader.exec_module(follower_controller)
     FollowerController = follower_controller.FollowerController
     FollowerControllerConfig = follower_controller.FollowerControllerConfig
+    FollowerStartupConfig = follower_controller.FollowerStartupConfig
     MissionState = follower_controller.MissionState
     VisualObservation = follower_controller.VisualObservation
     build_chain_config = follower_controller.build_chain_config
+    prepare_followers_for_chain = follower_controller.prepare_followers_for_chain
+    safe_stop_all = follower_controller.safe_stop_all
 
 
 def observation(
@@ -57,11 +65,10 @@ def observation(
 
 
 def build_controllers(follower_count):
-    cfg = FollowerControllerConfig(
-        reacquire_frames=2,
+    cfg = replace(
+        FollowerControllerConfig.responsive(),
         lost_timeout=0.3,
         observation_timeout=0.2,
-        smoothing_alpha=0.0,
     )
     return [
         FollowerController(link.follower_id, link.target_id, cfg)
@@ -133,6 +140,50 @@ def run_mock_scenario(follower_count):
         print_step(f'sequential reacquire frame {index + 1}', commands)
         t += 0.1
 
+
+
+async def run_real_chain_example(follower_count=2):
+    from drone_sdk import Drone, DroneFollowerActuator, run_follower_controller
+
+    links = build_chain_config(follower_count)
+    drones = [Drone(drone_id=link.drone_id) for link in links]
+    stop_requested = False
+
+    def stop_condition():
+        return stop_requested
+
+    try:
+        for drone in drones:
+            await drone.connect()
+
+        await prepare_followers_for_chain(
+            drones,
+            FollowerStartupConfig(startup_altitude_m=10.0),
+        )
+
+        controllers = [
+            FollowerController(link.follower_id, link.target_id, FollowerControllerConfig.responsive())
+            for link in links
+        ]
+        actuators = [DroneFollowerActuator(drone) for drone in drones]
+
+        async def missing_decoder_placeholder():
+            return None
+
+        tasks = [
+            run_follower_controller(
+                controller,
+                missing_decoder_placeholder,
+                actuator,
+                stop_condition,
+            )
+            for controller, actuator in zip(controllers, actuators)
+        ]
+        await asyncio.gather(*tasks)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        await safe_stop_all(drones)
 
 def main():
     run_mock_scenario(2)

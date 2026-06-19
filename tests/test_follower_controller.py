@@ -16,6 +16,11 @@ FollowerState = follower_controller.FollowerState
 MissionState = follower_controller.MissionState
 VisualObservation = follower_controller.VisualObservation
 build_chain_config = follower_controller.build_chain_config
+DroneFollowerActuator = follower_controller.DroneFollowerActuator
+FollowerStartupConfig = follower_controller.FollowerStartupConfig
+FollowerStartupError = follower_controller.FollowerStartupError
+prepare_followers_for_chain = follower_controller.prepare_followers_for_chain
+safe_stop_all = follower_controller.safe_stop_all
 
 
 def obs(
@@ -238,6 +243,158 @@ class FollowerControllerTests(unittest.TestCase):
             build_chain_config(1)
         with self.assertRaises(ValueError):
             build_chain_config(6)
+
+
+class MockPosition:
+
+    def __init__(self, down_m):
+        self.down_m = down_m
+
+
+class MockDrone:
+
+    def __init__(self, height_m=10.0, fail_takeoff=False):
+        self.height_m = height_m
+        self.fail_takeoff = fail_takeoff
+        self.armed = False
+        self.takeoff_altitudes = []
+        self.offboard_started = False
+        self.velocity_commands = []
+        self.heading_deg = 0.0
+
+    async def arm(self):
+        self.armed = True
+
+    async def takeoff(self, altitude_m=10.0):
+        if self.fail_takeoff:
+            raise RuntimeError('takeoff failed')
+        self.takeoff_altitudes.append(altitude_m)
+
+    async def position_ned(self):
+        return MockPosition(-self.height_m)
+
+    async def heading(self):
+        return self.heading_deg
+
+    async def set_velocity(self, north_m_s, east_m_s, down_m_s, yaw_deg=None):
+        self.velocity_commands.append((north_m_s, east_m_s, down_m_s, yaw_deg))
+
+    async def start_offboard(self):
+        self.offboard_started = True
+
+
+class StartupHelperTests(unittest.IsolatedAsyncioTestCase):
+
+    async def test_all_followers_prepare_successfully(self):
+        drones = [MockDrone(height_m=10.0), MockDrone(height_m=10.2)]
+        startup = FollowerStartupConfig(
+            startup_altitude_m=10.0,
+            startup_timeout_s=0.05,
+            startup_settle_time_s=0.0,
+            startup_height_tolerance_m=0.5,
+            startup_poll_interval_s=0.001,
+        )
+        await prepare_followers_for_chain(drones, startup)
+        self.assertTrue(all(drone.armed for drone in drones))
+        self.assertEqual([drone.takeoff_altitudes for drone in drones], [[10.0], [10.0]])
+        self.assertTrue(all(drone.offboard_started for drone in drones))
+        self.assertTrue(all(drone.velocity_commands for drone in drones))
+
+    async def test_startup_failure_safe_stops_all_followers(self):
+        drones = [MockDrone(height_m=10.0), MockDrone(height_m=10.0, fail_takeoff=True)]
+        startup = FollowerStartupConfig(startup_settle_time_s=0.0)
+        with self.assertRaises(FollowerStartupError):
+            await prepare_followers_for_chain(drones, startup)
+        self.assertTrue(all(drone.velocity_commands for drone in drones))
+
+    async def test_startup_timeout_safe_stops_all_followers(self):
+        drones = [MockDrone(height_m=0.0), MockDrone(height_m=10.0)]
+        startup = FollowerStartupConfig(
+            startup_altitude_m=10.0,
+            startup_timeout_s=0.01,
+            startup_settle_time_s=0.0,
+            startup_height_tolerance_m=0.1,
+            startup_poll_interval_s=0.001,
+        )
+        with self.assertRaises(FollowerStartupError):
+            await prepare_followers_for_chain(drones, startup)
+        self.assertTrue(all(drone.velocity_commands for drone in drones))
+
+    async def test_safe_stop_all_sends_zero_velocity(self):
+        drones = [MockDrone(height_m=10.0), MockDrone(height_m=10.0)]
+        await safe_stop_all(drones)
+        self.assertEqual(drones[0].velocity_commands[-1], (0.0, 0.0, 0.0, 0.0))
+        self.assertEqual(drones[1].velocity_commands[-1], (0.0, 0.0, 0.0, 0.0))
+
+
+class ProfileAndActuatorTests(unittest.IsolatedAsyncioTestCase):
+
+    def test_responsive_profile_has_higher_rate_and_less_smoothing(self):
+        stable = FollowerControllerConfig.stable()
+        responsive = FollowerControllerConfig.responsive()
+        self.assertGreater(responsive.control_rate_hz, stable.control_rate_hz)
+        self.assertLess(responsive.smoothing_alpha, stable.smoothing_alpha)
+        self.assertEqual(responsive.reacquire_frames, 2)
+
+    def test_responsive_profile_reacquires_faster_than_stable(self):
+        stable_controller = FollowerController('follower_1', 'leader', FollowerControllerConfig.stable())
+        responsive_controller = FollowerController('follower_1', 'leader', FollowerControllerConfig.responsive())
+        stable_first = stable_controller.update(obs(t=0.0), current_time=0.0)
+        stable_second = stable_controller.update(obs(t=0.1), current_time=0.1)
+        responsive_first = responsive_controller.update(obs(t=0.0), current_time=0.0)
+        responsive_second = responsive_controller.update(obs(t=0.1), current_time=0.1)
+        self.assertNotEqual(stable_second.state, FollowerState.FOLLOW)
+        self.assertEqual(responsive_first.state, FollowerState.SEARCH)
+        self.assertEqual(responsive_second.state, FollowerState.FOLLOW)
+
+    def test_search_does_not_generate_vertical_command(self):
+        c = controller()
+        cmd = c.update(obs(visible=False, v=45.0), current_time=0.0)
+        self.assertEqual(cmd.state, FollowerState.SEARCH)
+        self.assertEqual(cmd.forward_m_s, 0.0)
+        self.assertEqual(cmd.right_m_s, 0.0)
+        self.assertEqual(cmd.down_m_s, 0.0)
+
+    def test_different_start_height_is_not_randomly_compensated_in_search(self):
+        c = controller()
+        cmd = c.update(obs(visible=False, v=-45.0, size=0.0), current_time=0.0)
+        self.assertEqual(cmd.down_m_s, 0.0)
+        self.assertEqual(cmd.forward_m_s, 0.0)
+
+    async def test_yaw_integration_dt_is_capped(self):
+        drone = MockDrone(height_m=10.0)
+        actuator = DroneFollowerActuator(drone, max_yaw_integration_dt=0.1)
+        command = follower_controller.FollowerCommand(
+            forward_m_s=0.0,
+            right_m_s=0.0,
+            down_m_s=0.0,
+            yaw_rate_deg_s=30.0,
+            relay_state=MissionState.FOLLOW,
+            state=FollowerState.FOLLOW,
+        )
+        await actuator.apply(command, current_time=0.0)
+        await actuator.apply(command, current_time=1.0)
+        self.assertEqual(drone.velocity_commands[-1][3], 3.0)
+
+    def test_responsive_profile_still_clamps_commands(self):
+        c = FollowerController('follower_1', 'leader', FollowerControllerConfig.responsive())
+        cmd = c.update(obs(h=1000.0, v=1000.0, size=0.0), current_time=0.0)
+        self.assertLessEqual(abs(cmd.yaw_rate_deg_s), c.config.max_yaw_rate)
+        self.assertLessEqual(abs(cmd.down_m_s), c.config.max_vertical_speed)
+        self.assertLessEqual(abs(cmd.forward_m_s), c.config.max_forward_speed)
+
+    def test_hold_and_finish_remain_immediate_zero_commands(self):
+        hold = FollowerController('follower_1', 'leader', FollowerControllerConfig.responsive()).update(
+            obs(h=1000.0, v=1000.0, size=0.0, state=MissionState.HOLD),
+            current_time=0.0,
+        )
+        finish = FollowerController('follower_1', 'leader', FollowerControllerConfig.responsive()).update(
+            obs(h=1000.0, v=1000.0, size=0.0, state=MissionState.FINISH),
+            current_time=0.0,
+        )
+        self.assertEqual((hold.forward_m_s, hold.down_m_s, hold.yaw_rate_deg_s), (0.0, 0.0, 0.0))
+        self.assertEqual((finish.forward_m_s, finish.down_m_s, finish.yaw_rate_deg_s), (0.0, 0.0, 0.0))
+
 
 
 if __name__ == '__main__':

@@ -1,7 +1,7 @@
 import asyncio
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Awaitable, Callable, Iterable, Optional
 
@@ -19,6 +19,10 @@ class FollowerState(str, Enum):
     LOST = 'LOST'
     HOLD = 'HOLD'
     FINISH = 'FINISH'
+
+
+class FollowerStartupError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,31 @@ class FollowerControllerConfig:
     control_rate_hz: float = 10.0
     yaw_sign: float = 1.0
     vertical_sign: float = 1.0
+
+    @classmethod
+    def stable(cls) -> 'FollowerControllerConfig':
+        return cls()
+
+    @classmethod
+    def responsive(cls) -> 'FollowerControllerConfig':
+        return cls(
+            control_rate_hz=20.0,
+            reacquire_frames=2,
+            observation_timeout=0.25,
+            smoothing_alpha=0.2,
+            kp_yaw=1.5,
+            kp_forward=0.03,
+            kp_vertical=0.03,
+        )
+
+
+@dataclass(frozen=True)
+class FollowerStartupConfig:
+    startup_altitude_m: float = 10.0
+    startup_timeout_s: float = 30.0
+    startup_settle_time_s: float = 2.0
+    startup_height_tolerance_m: float = 0.75
+    startup_poll_interval_s: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -461,9 +490,15 @@ class MockVisualProvider:
 
 class DroneFollowerActuator:
 
-    def __init__(self, drone, yaw_update_dt: Optional[float] = None):
+    def __init__(
+        self,
+        drone,
+        yaw_update_dt: Optional[float] = None,
+        max_yaw_integration_dt: float = 0.1,
+    ):
         self.drone = drone
         self.yaw_update_dt = yaw_update_dt
+        self.max_yaw_integration_dt = max_yaw_integration_dt
         self._last_apply_time: Optional[float] = None
         self._yaw_deg: Optional[float] = None
 
@@ -475,6 +510,7 @@ class DroneFollowerActuator:
         dt = self.yaw_update_dt
         if dt is None:
             dt = 0.0 if self._last_apply_time is None else max(0.0, now - self._last_apply_time)
+        dt = min(dt, self.max_yaw_integration_dt)
         self._last_apply_time = now
         self._yaw_deg = (self._yaw_deg + command.yaw_rate_deg_s * dt) % 360.0
         yaw_rad = math.radians(heading)
@@ -495,6 +531,57 @@ class DroneFollowerActuator:
         if heading is None:
             heading = await self.drone.heading()
         await self.drone.set_velocity(0.0, 0.0, 0.0, yaw_deg=heading)
+
+
+async def safe_stop_all(drones: Iterable) -> None:
+    for drone in drones:
+        try:
+            heading = await drone.heading()
+            await drone.set_velocity(0.0, 0.0, 0.0, yaw_deg=heading)
+        except Exception:
+            pass
+
+
+async def _wait_until_startup_altitude(drone, config: FollowerStartupConfig) -> None:
+    deadline = time.monotonic() + config.startup_timeout_s
+    while time.monotonic() < deadline:
+        position = await drone.position_ned()
+        altitude_m = -position.down_m
+        if abs(altitude_m - config.startup_altitude_m) <= config.startup_height_tolerance_m:
+            return
+        await asyncio.sleep(config.startup_poll_interval_s)
+    raise FollowerStartupError(
+        f'drone startup altitude timeout: expected {config.startup_altitude_m:.2f}m'
+    )
+
+
+async def prepare_followers_for_chain(
+    drones: Iterable,
+    config: Optional[FollowerStartupConfig] = None,
+) -> None:
+    startup_config = config or FollowerStartupConfig()
+    prepared = list(drones)
+    try:
+        for drone in prepared:
+            await drone.arm()
+        await asyncio.gather(*(
+            drone.takeoff(altitude_m=startup_config.startup_altitude_m)
+            for drone in prepared
+        ))
+        await asyncio.gather(*(
+            _wait_until_startup_altitude(drone, startup_config)
+            for drone in prepared
+        ))
+        if startup_config.startup_settle_time_s > 0.0:
+            await asyncio.sleep(startup_config.startup_settle_time_s)
+        for drone in prepared:
+            await drone.start_offboard()
+        await safe_stop_all(prepared)
+    except Exception as exc:
+        await safe_stop_all(prepared)
+        if isinstance(exc, FollowerStartupError):
+            raise
+        raise FollowerStartupError(f'follower startup failed: {exc}') from exc
 
 
 async def run_follower_controller(
