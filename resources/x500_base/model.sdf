@@ -587,12 +587,37 @@
           <ixx>0.00001</ixx><iyy>0.00001</iyy><izz>0.00001</izz>
         </inertia>
       </inertial>
-      <!-- LED budget: 2 lenses only (one LED group on the leader, per hackathon rules).
-           Default material is OFF (dark); only the leader actively lights these via
-           the led_controller plugin. Followers never send LED commands, so their
-           lenses stay dark = effectively no LEDs on followers. -->
+      <!-- PYGR marker, default material OFF/dark. The led_controller plugin
+           lights each lens with its fixed role color when the matching mask bit
+           is enabled:
+           led_lens_01 = P / purple tracking target
+           led_lens_02 = Y / yellow distance reference
+           led_lens_03 = G / green command bit
+           led_lens_04 = R / red command bit -->
       <visual name="led_lens_01">
-        <pose>0  0.05 0  0 0 0</pose>
+        <pose>0 0 0.05 0 0 0</pose>
+        <geometry>
+          <sphere><radius>0.025</radius></sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 0 1</ambient>
+          <diffuse>0 0 0 1</diffuse>
+          <emissive>0 0 0 1</emissive> </material>
+      </visual>
+
+      <visual name="led_lens_02">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere><radius>0.025</radius></sphere>
+        </geometry>
+        <material>
+          <ambient>0 0 0 1</ambient>
+          <diffuse>0 0 0 1</diffuse>
+          <emissive>0 0 0 1</emissive> </material>
+      </visual>
+
+      <visual name="led_lens_03">
+        <pose>0 0.055 -0.035 0 0 0</pose>
         <geometry>
           <sphere><radius>0.025</radius></sphere>
         </geometry>
@@ -603,7 +628,7 @@
       </visual>
 
       <visual name="led_lens_04">
-        <pose>0 -0.05 -0.04  0 0 0</pose>
+        <pose>0 -0.055 -0.035 0 0 0</pose>
         <geometry>
           <sphere><radius>0.025</radius></sphere>
         </geometry>

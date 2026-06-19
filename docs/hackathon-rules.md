@@ -69,10 +69,10 @@ Suggested baseline:
 
 - one LED group on the leader;
 - visible camera-based detection from followers;
-- limited colors/channels and blink frequencies;
+- limited fixed colors/channels;
 - no unlimited auxiliary markers that turn the task into direct localization.
 
-This repository currently models two LED lenses per drone. The Gazebo plugin still accepts four-character binary masks for SDK compatibility: bit 1 controls the green anchor lens, bit 2 controls the red signal lens, and bits 3-4 are unused by the current model. It also accepts `ON`, `OFF`, and `BLINK` legacy commands.
+This repository currently models one four-lens PYGR marker per drone. The Gazebo plugin accepts binary masks with at least four characters: bit 1 controls the purple target lens, bit 2 controls the yellow distance lens, bit 3 controls the green command lens, and bit 4 controls the red command lens. It also accepts `ON`, `OFF`, and debug `BLINK` commands.
 
 ## Minimum Protocol Requirements
 
@@ -115,4 +115,3 @@ Recommended timing:
 - Protocol: 3 minutes.
 - Results: 3 minutes.
 - Q&A: 2 minutes.
-

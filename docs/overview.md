@@ -46,7 +46,7 @@ The base task is intentionally scoped as a leader-follower problem. Full mesh co
 - Drone 0: leader, also starts Gazebo.
 - Drones 1, 2, 3: followers, launched after a short delay so Gazebo is ready.
 
-All drones use the `gz_x500_mono_cam` model in the `baylands_custom` world. Each drone has a camera and two LED lenses controlled through a Gazebo topic: mask bit 1 drives the green anchor lens, and mask bit 2 drives the red signal lens.
+All drones use the `gz_x500_mono_cam` model in the `baylands_custom` world. Each drone has a camera and a rear PYGR LED marker controlled through a Gazebo topic. The marker uses four fixed-color lenses: `led_lens_01` purple tracking target, `led_lens_02` yellow distance reference, `led_lens_03` green command bit, and `led_lens_04` red command bit.
 
 ## Main Data Flow
 
@@ -60,4 +60,3 @@ All drones use the `gz_x500_mono_cam` model in the `baylands_custom` world. Each
 ## Current Scope
 
 The repository provides a starter package, examples, modified Gazebo assets, and API wrappers. It does not yet include a complete follower CV/control solution or an `evaluate.py` implementation.
-

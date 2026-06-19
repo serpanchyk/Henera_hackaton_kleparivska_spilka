@@ -1,0 +1,21 @@
+FOLLOW = "FOLLOW"
+HOLD = "HOLD"
+FINISH = "FINISH"
+SAFE = "SAFE"
+UNKNOWN = "UNKNOWN"
+
+FOLLOW_MASK = "1111"
+HOLD_MASK = "1110"
+FINISH_MASK = "1101"
+SAFE_MASK = "1100"
+
+STATE_TO_MASK = {
+    FOLLOW: FOLLOW_MASK,
+    HOLD: HOLD_MASK,
+    FINISH: FINISH_MASK,
+    SAFE: SAFE_MASK,
+}
+
+
+def mask_for_state(state: str) -> str:
+    return STATE_TO_MASK.get(state, SAFE_MASK)

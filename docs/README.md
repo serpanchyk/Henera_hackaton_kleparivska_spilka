@@ -9,6 +9,7 @@ The baseline scenario uses one leader drone and three follower drones in the `ba
 - [Project Overview](overview.md): mission scope, repository layout, and runtime architecture.
 - [Getting Started](getting-started.md): environment setup, PX4/Gazebo installation notes, project setup, and first launch.
 - [Hackathon Rules](hackathon-rules.md): official task framing, allowed/prohibited data, LED budget, and submission format.
+- [PYGR LED Protocol](pygr_led_protocol.md): four-LED fixed-color marker layout, masks, and Gazebo test commands.
 - [SDK API](sdk-api.md): `drone_sdk` public API, ports, topics, camera, LED, and flight-control methods.
 - [Examples](examples.md): current demo and swarm scripts.
 - [Evaluation](evaluation.md): public/hidden scenarios, scoring rubric, metrics, penalties, and `results.json`.
@@ -24,4 +25,3 @@ These docs consolidate information from:
 - `SDK_AND_EXAMPLES.md`
 - `resources/scripts/led_controller/README.md`
 - Current repository code in `drone_sdk/`, `examples/`, `resources/scripts/`, and `project_setup.sh`
-

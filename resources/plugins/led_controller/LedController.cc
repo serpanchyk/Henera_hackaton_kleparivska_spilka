@@ -8,8 +8,34 @@
 #include <gz/common/Console.hh>
 #include <gz/math/Color.hh>
 #include <algorithm>
+#include <array>
 
 using namespace led_controller;
+
+namespace
+{
+constexpr size_t kPygrLedCount = 4;
+
+const std::array<gz::math::Color, kPygrLedCount> kPygrColors = {
+    gz::math::Color(1.0f, 0.0f, 1.0f, 1.0f), // led_lens_01: purple target
+    gz::math::Color(1.0f, 1.0f, 0.0f, 1.0f), // led_lens_02: yellow distance
+    gz::math::Color(0.0f, 1.0f, 0.0f, 1.0f), // led_lens_03: green command
+    gz::math::Color(1.0f, 0.0f, 0.0f, 1.0f), // led_lens_04: red command
+};
+
+const gz::math::Color kOffColor(0.0f, 0.0f, 0.0f, 0.0f);
+
+bool IsBinaryMask(const std::string &_cmd)
+{
+    if (_cmd.size() < kPygrLedCount) {
+        return false;
+    }
+
+    return std::all_of(_cmd.begin(), _cmd.end(), [](char c) {
+        return c == '0' || c == '1';
+    });
+}
+}
 
 void LedController::Configure(
     const gz::sim::Entity &_entity,
@@ -63,9 +89,13 @@ void LedController::Configure(
         }
         gzmsg << foundLenses[i].first;
         if (i == 0) {
-            gzmsg << "=mask[0]/green anchor";
+            gzmsg << "=mask[0]/purple target";
         } else if (i == 1) {
-            gzmsg << "=mask[1]/red signal";
+            gzmsg << "=mask[1]/yellow distance";
+        } else if (i == 2) {
+            gzmsg << "=mask[2]/green command";
+        } else if (i == 3) {
+            gzmsg << "=mask[3]/red command";
         }
     }
     gzmsg << std::endl;
@@ -108,25 +138,14 @@ void LedController::PreUpdate(
         this->stateChanged = false;
     }
 
-    gz::math::Color greenColor(0.0f, 1.0f, 0.0f, 1.0f);
-    gz::math::Color redColor(1.0f, 0.0f, 0.0f, 1.0f);
-    gz::math::Color offColor(0.0f, 0.0f, 0.0f, 0.0f);
-
-    // --- NEW BINARY MASK PARSER LOGIC ---
-    if (cmd.length() == 4 && (cmd[0] == '1' || cmd[0] == '0'))
+    if (IsBinaryMask(cmd))
     {
-        // Parse individual states based on the binary mask string positions.
-        // Lenses are sorted by name: index 0 = led_lens_01 (anchor, GREEN),
-        // index 1 = led_lens_04 (signal, RED). Distinct colours let the CV
-        // pipeline tell anchor from signal even when they overlap.
-        for (size_t i = 0; i < this->ledVisualEntities.size() && i < 4; ++i)
+        for (size_t i = 0; i < this->ledVisualEntities.size() && i < kPygrLedCount; ++i)
         {
-            gz::math::Color onColor = (i == 1) ? redColor : greenColor;
-            gz::math::Color targetedColor = (cmd[i] == '1') ? onColor : offColor;
+            const gz::math::Color &targetedColor = (cmd[i] == '1') ? kPygrColors[i] : kOffColor;
             this->UpdateVisualState(this->ledVisualEntities[i], targetedColor, _ecm);
         }
     }
-    // --- FALLBACK TO NATIVE STANDARD MACROS ("ON"/"OFF") ---
     else 
     {
         if (cmd == "BLINK") 
@@ -143,8 +162,10 @@ void LedController::PreUpdate(
 
         if (shouldUpdateLenses || cmd == "ON" || cmd == "OFF") 
         {
-            gz::math::Color targetedColor = (cmd == "ON") ? greenColor : offColor;
-            for (const auto &visEntity : this->ledVisualEntities) {
+            for (size_t i = 0; i < this->ledVisualEntities.size(); ++i) {
+                const gz::math::Color &targetedColor =
+                    (cmd == "ON" && i < kPygrLedCount) ? kPygrColors[i] : kOffColor;
+                const auto &visEntity = this->ledVisualEntities[i];
                 this->UpdateVisualState(visEntity, targetedColor, _ecm);
             }
         }

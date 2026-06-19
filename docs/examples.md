@@ -35,7 +35,7 @@ Movement sequence:
 
 LED pattern:
 
-- `1000`
+- `1111`
 - `1100`
 - `BLINK`
 
@@ -114,9 +114,9 @@ Example pattern file:
       "delay_time": 0.25,
       "loop": true,
       "timeline": [
-        {"mask": "1100", "ticks": 4},
+        {"mask": "1111", "ticks": 4},
         {"mask": "0000", "ticks": 4},
-        {"mask": "1000", "ticks": 2}
+        {"mask": "1100", "ticks": 2}
       ]
     }
   }
@@ -140,6 +140,8 @@ Arguments:
 ## Two-LED CV Debug Runner
 
 `resources/scripts/two_led_cv_debug.py` runs the perception-only two-LED pipeline:
+
+This is legacy/debug code for the earlier two-LED experiment and is not the PYGR marker decoder.
 
 1. read camera, webcam, video, or image frames;
 2. detect the green anchor and red signal LEDs;
@@ -189,18 +191,18 @@ python3 resources/scripts/two_led_cv_debug.py --source ./sample_video.mp4 --debu
 python3 resources/scripts/two_led_cv_debug.py --source ./sample_frame.png --debug --show-mask
 ```
 
-Test leader LED masks directly with Gazebo:
+Test the active PYGR leader LED masks directly with Gazebo:
+
+```bash
+gz topic -t /model/x500_mono_cam_0/led_cmd -m gz.msgs.StringMsg -p 'data:"1111"'
+```
+
+Expected result: purple, yellow, green, and red LEDs are visible.
 
 ```bash
 gz topic -t /model/x500_mono_cam_0/led_cmd -m gz.msgs.StringMsg -p 'data:"1100"'
 ```
 
-Expected result: both modeled LEDs are visible, with the anchor green and signal red.
-
-```bash
-gz topic -t /model/x500_mono_cam_0/led_cmd -m gz.msgs.StringMsg -p 'data:"1000"'
-```
-
-Expected result: only the green anchor LED is visible, with the red signal LED OFF.
+Expected result: only the purple target and yellow distance LEDs are visible.
 
 The overlay shows detected contours, LED blob centers, selected pair line, midpoint or estimated midpoint, `x_error`, `y_error`, `led_distance_px`, decoded `state`, `signal_on_ratio`, and `transitions_per_s`.

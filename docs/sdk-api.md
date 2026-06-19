@@ -138,7 +138,7 @@ heading = await drone.heading()
 LED methods lazily initialize ROS and bridge subprocesses:
 
 ```python
-drone.set_leds("1000")
+drone.set_leds("1111")
 drone.led_on()
 drone.led_off()
 drone.led_blink()
@@ -146,12 +146,12 @@ drone.led_blink()
 
 Supported command forms in the current Gazebo plugin:
 
-- four-character binary masks: `1100`, `1000`, etc.;
+- binary masks with at least four characters: `1111`, `1110`, `1101`, `1100`, etc.;
 - `ON`;
 - `OFF`;
 - `BLINK`.
 
-For the current two-lens model, mask bit 1 controls `led_lens_01` as the green anchor and mask bit 2 controls `led_lens_04` as the red signal. Bits 3 and 4 are unused. Use `1100` for green anchor plus red signal, and `1000` for green anchor only.
+The active model uses the PYGR fixed-color marker. Mask order is `led_lens_01` purple target, `led_lens_02` yellow distance reference, `led_lens_03` green command bit, and `led_lens_04` red command bit. Use `1111` for `FOLLOW`, `1110` for `HOLD`, `1101` for `FINISH`, and `1100` for `SAFE`. See [PYGR LED Protocol](pygr_led_protocol.md).
 
 ## Camera
 
@@ -195,4 +195,3 @@ Exported exception classes:
 - `LEDError`
 
 The current SDK actively raises `ConnectionError`, `TimeoutError`, and `MAVSDKError`. Other classes are available for consistent caller-side handling.
-
