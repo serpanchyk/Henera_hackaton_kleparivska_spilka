@@ -5,6 +5,9 @@ from mavsdk.offboard import PositionNedYaw, OffboardError
 
 # --- Configuration Constants ---
 TAKEOFF_ALT_M = 1.0     # Take off exactly 1 meter above the platform
+STRAIGHT_DISTANCE_M = 12.0
+STRAIGHT_FLIGHT_S = 18
+FINAL_HOVER_S = 5
 
 async def run():
     drone = System()
@@ -68,66 +71,14 @@ async def run():
         await drone.action.disarm()
         return
 
-    # ==========================
-    # CORE CAMERA TRAINING PATTERN
-    # ==========================
+    # Straight leader mission only: no lateral or altitude pattern.
+    print(f"-> Moving straight forward {STRAIGHT_DISTANCE_M} meters")
+    await drone.offboard.set_position_ned(get_ned_position(STRAIGHT_DISTANCE_M, 0.0, 0.0))
+    await asyncio.sleep(STRAIGHT_FLIGHT_S)
 
-    # --- Phase 1: Move on path 2 meters ---
-    print("-> Moving forward 2 meters on path")
-    await drone.offboard.set_position_ned(get_ned_position(2.0, 0.0, 0.0))
-    await asyncio.sleep(6)
-
-    # --- Sub-routine 1: Cross & Altitude Pattern ---
-    print("-> Pattern 1: Perpendicular left 2m")
-    await drone.offboard.set_position_ned(get_ned_position(2.0, 2.0, 0.0))
-    await asyncio.sleep(5)
-
-    print("-> Pattern 1: Perpendicular right 2m")
-    await drone.offboard.set_position_ned(get_ned_position(2.0, -2.0, 0.0))
-    await asyncio.sleep(7)
-
-    print("-> Pattern 1: Return to center line")
-    await drone.offboard.set_position_ned(get_ned_position(2.0, 0.0, 0.0))
-    await asyncio.sleep(5)
-
-    print("-> Pattern 1: Climb up +2 meters")
-    await drone.offboard.set_position_ned(get_ned_position(2.0, 0.0, 2.0))
-    await asyncio.sleep(5)
-
-    print("-> Pattern 1: Climb down -2 meters")
-    await drone.offboard.set_position_ned(get_ned_position(2.0, 0.0, 0.0))
-    await asyncio.sleep(5)
-
-    # --- Phase 2: Progress down path to +5 meters total ---
-    print("-> Moving forward an additional 3 meters (Total: 5m down path)")
-    await drone.offboard.set_position_ned(get_ned_position(5.0, 0.0, 0.0))
-    await asyncio.sleep(6)
-
-    # --- Sub-routine 2: Repeat Pattern ---
-    print("-> Pattern 2: Perpendicular left 2m")
-    await drone.offboard.set_position_ned(get_ned_position(5.0, 2.0, 0.0))
-    await asyncio.sleep(5)
-
-    print("-> Pattern 2: Perpendicular right 2m")
-    await drone.offboard.set_position_ned(get_ned_position(5.0, -2.0, 0.0))
-    await asyncio.sleep(7)
-
-    print("-> Pattern 2: Return to center line")
-    await drone.offboard.set_position_ned(get_ned_position(5.0, 0.0, 0.0))
-    await asyncio.sleep(5)
-
-    print("-> Pattern 2: Climb up +2 meters")
-    await drone.offboard.set_position_ned(get_ned_position(5.0, 0.0, 2.0))
-    await asyncio.sleep(5)
-
-    print("-> Pattern 2: Climb down -2 meters")
-    await drone.offboard.set_position_ned(get_ned_position(5.0, 0.0, 0.0))
-    await asyncio.sleep(5)
-
-    # --- Phase 3: Return & Land ---
-    print("-> Returning backwards to start position (0,0)")
-    await drone.offboard.set_position_ned(get_ned_position(0.0, 0.0, 0.0))
-    await asyncio.sleep(8)
+    print("-- Holding final straight-line position")
+    await drone.offboard.set_position_ned(get_ned_position(STRAIGHT_DISTANCE_M, 0.0, 0.0))
+    await asyncio.sleep(FINAL_HOVER_S)
 
     print("-- Stopping Offboard Mode to allow landing action")
     try:

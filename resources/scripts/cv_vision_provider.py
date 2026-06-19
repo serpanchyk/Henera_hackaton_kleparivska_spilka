@@ -66,6 +66,7 @@ class CVVisionProvider:
         self.decoder = TwoLedCommandDecoder()
         self.show = show
         self.window_name = window_name or f'Follower {getattr(drone, "drone_id", "?")}'
+        self.last_debug = {}
         if self.show:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
@@ -90,6 +91,14 @@ class CVVisionProvider:
         obs = self._build_observation(anchor, signal, state, width, height)
         visual = two_led_to_visual(obs, horizontal_fov_rad=self.hfov_rad,
                                    frame_aspect=height / width)
+        self.last_debug = {
+            'anchor_visible': obs.anchor_visible,
+            'signal_visible': obs.signal_visible,
+            'decoder_state': state,
+            'estimated_range_m': obs.estimated_range_m,
+            'led_distance_px': obs.led_distance_px,
+            **self.decoder.debug_stats(),
+        }
 
         if self.show:
             self._draw(frame, anchor, signal, visual)

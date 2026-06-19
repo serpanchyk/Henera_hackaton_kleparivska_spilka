@@ -92,7 +92,7 @@ python3 examples/swarm_waypoints.py
 
 ## `resources/scripts/mission_launch.py`
 
-Leader-only MAVSDK mission script. It connects to drone 0, takes off, captures current heading/altitude, starts offboard mode, runs a simple path/training pattern, and lands.
+Leader-only MAVSDK mission script. It connects to drone 0, takes off, captures current heading/altitude, starts offboard mode, flies straight forward at constant altitude, briefly hovers, and lands.
 
 Run after swarm launch:
 

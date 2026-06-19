@@ -178,5 +178,5 @@ cd ~/falcon_gaze/resources/scripts
 python3 mission_launch.py
 ```
 
-This runs a simple leader mission pattern using MAVSDK.
+This runs a simple straight leader mission using MAVSDK.
 

@@ -1,5 +1,11 @@
+import math
+
 from launch import LaunchDescription    
 from launch.actions import ExecuteProcess, TimerAction
+
+TRAIN_YAW_RAD = 3.7346
+SPAWN_Z_M = 1.4
+TRAIN_SPACING_M = 2.0
 
 def leader_instanse(x, y, z, yaw=3.7346):
         cmd = f"""
@@ -7,7 +13,7 @@ def leader_instanse(x, y, z, yaw=3.7346):
             PX4_SYS_AUTOSTART=4010 \
             PX4_SIM_MODEL=gz_x500_mono_cam \
             PX4_GZ_WORLD=baylands_custom \
-            PX4_GZ_MODEL_POSE="{x},{y},{z},0,0,3.7346" \
+            PX4_GZ_MODEL_POSE="{x},{y},{z},0,0,{yaw}" \
             ./build/px4_sitl_default/bin/px4 -i 0
             """
         return ExecuteProcess(
@@ -31,19 +37,30 @@ def follower_instanse(i, x, y, z, yaw=3.7346):
 
 def generate_launch_description():
         actions = []
+        # Train formation:
+        # - yaw is the train direction; all drones face the same way so cameras look forward.
+        # - followers are spawned behind the previous drone along the opposite yaw vector.
+        # - 2.0 m spacing keeps each follower aimed at the previous drone's rear LED markers.
+        # - poses are always x,y,z,0,0,yaw to keep drones upright.
+        leader_x = 127.0
+        leader_y = 52.67
+        behind_dx = -TRAIN_SPACING_M * math.cos(TRAIN_YAW_RAD)
+        behind_dy = -TRAIN_SPACING_M * math.sin(TRAIN_YAW_RAD)
+
         # Leader (Starts Gazebo)
         actions.append(
                 leader_instanse(
-                        127.0, 
-                        52.67, 
-                        1.4
+                        leader_x, 
+                        leader_y, 
+                        SPAWN_Z_M,
+                        TRAIN_YAW_RAD
                     )
         )
         # Followers
         followers = [
-                (1, 129.92, 52.852, 1.4),
-                (2, 129.08, 54.095, 1.4),
-                (3, 128.24, 55.339, 1.4)
+                (1, leader_x + behind_dx, leader_y + behind_dy, SPAWN_Z_M),
+                (2, leader_x + 2 * behind_dx, leader_y + 2 * behind_dy, SPAWN_Z_M),
+                (3, leader_x + 3 * behind_dx, leader_y + 3 * behind_dy, SPAWN_Z_M)
         ]
 
         #Delay followers so Gazebo is ready

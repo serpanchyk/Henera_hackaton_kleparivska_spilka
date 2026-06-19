@@ -64,4 +64,5 @@ fi
 sleep 3
 
 echo "[start-cv] Launching CV end-to-end test..."
+echo "[start-cv] CV route: straight train-direction flight only; no turn pattern."
 ros2 launch "$REPO/resources/scripts/cv_launch.py"
