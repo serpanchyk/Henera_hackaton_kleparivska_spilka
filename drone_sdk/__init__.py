@@ -1,4 +1,5 @@
-from .drone import Drone, PositionNED
+from typing import TYPE_CHECKING
+
 from .exceptions import (
     DroneSDKError,
     ConnectionError,
@@ -27,6 +28,9 @@ from .follower_controller import (
     run_follower_controller,
 )
 
+if TYPE_CHECKING:
+    from .drone import Drone, PositionNED
+
 __all__ = [
     'Drone',
     'PositionNED',
@@ -54,3 +58,15 @@ __all__ = [
     'safe_stop_all',
     'run_follower_controller',
 ]
+
+
+def __getattr__(name: str):
+    if name in {'Drone', 'PositionNED'}:
+        from .drone import Drone, PositionNED
+
+        values = {
+            'Drone': Drone,
+            'PositionNED': PositionNED,
+        }
+        return values[name]
+    raise AttributeError(f"module 'drone_sdk' has no attribute {name!r}")
