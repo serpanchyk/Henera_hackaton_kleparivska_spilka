@@ -27,6 +27,22 @@ from .follower_controller import (
     safe_stop_all,
     run_follower_controller,
 )
+from .swarm_startup import (
+    StartupError,
+    StartupState,
+    AlignmentStatus,
+    StartupConfig,
+    DroneStartupStatus,
+    AlignmentResult,
+    SwarmStartupCoordinator,
+    prepare_swarm_for_start,
+    safe_stop_all,
+    align_follower_to_target,
+    align_chain_sequentially,
+    is_alignment_ready,
+    alignment_command,
+    wait_for_all_ready_then_start,
+)
 
 if TYPE_CHECKING:
     from .drone import Drone, PositionNED
@@ -57,6 +73,19 @@ __all__ = [
     'prepare_followers_for_chain',
     'safe_stop_all',
     'run_follower_controller',
+    'wait_for_all_ready_then_start',
+    'alignment_command',
+    'is_alignment_ready',
+    'align_chain_sequentially',
+    'align_follower_to_target',
+    'prepare_swarm_for_start',
+    'SwarmStartupCoordinator',
+    'AlignmentResult',
+    'DroneStartupStatus',
+    'StartupConfig',
+    'AlignmentStatus',
+    'StartupState',
+    'StartupError',
 ]
 
 
