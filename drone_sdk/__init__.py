@@ -1,4 +1,4 @@
-from .drone import Drone, PositionNED
+﻿from .drone import Drone, PositionNED
 from .exceptions import (
     DroneSDKError,
     ConnectionError,
@@ -7,6 +7,20 @@ from .exceptions import (
     GazeboError,
     CameraError,
     LEDError,
+)
+from .follower_controller import (
+    MissionState,
+    FollowerState,
+    VisualObservation,
+    FollowerControllerConfig,
+    FollowerCommand,
+    ChainLinkConfig,
+    FollowerController,
+    MockVisualProvider,
+    DroneFollowerActuator,
+    build_chain_config,
+    normalize_mission_state,
+    run_follower_controller,
 )
 
 __all__ = [
@@ -19,4 +33,16 @@ __all__ = [
     'GazeboError',
     'CameraError',
     'LEDError',
+    'MissionState',
+    'FollowerState',
+    'VisualObservation',
+    'FollowerControllerConfig',
+    'FollowerCommand',
+    'ChainLinkConfig',
+    'FollowerController',
+    'MockVisualProvider',
+    'DroneFollowerActuator',
+    'build_chain_config',
+    'normalize_mission_state',
+    'run_follower_controller',
 ]
