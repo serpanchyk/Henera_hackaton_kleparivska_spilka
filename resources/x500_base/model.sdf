@@ -587,36 +587,19 @@
           <ixx>0.00001</ixx><iyy>0.00001</iyy><izz>0.00001</izz>
         </inertia>
       </inertial>
-      <visual name="led_lens_02">
-        <geometry>
-          <sphere><radius>0.025</radius></sphere>
-        </geometry>
-        <material>
-          <ambient>0 1 0 1</ambient>
-          <diffuse>0 1 0 1</diffuse>
-          <emissive>0 1 0 1</emissive> </material>
-      </visual>
-      
+      <!-- LED budget: 2 lenses only (one LED group on the leader, per hackathon rules).
+           Default material is OFF (dark); only the leader actively lights these via
+           the led_controller plugin. Followers never send LED commands, so their
+           lenses stay dark = effectively no LEDs on followers. -->
       <visual name="led_lens_01">
         <pose>0  0.05 0  0 0 0</pose>
         <geometry>
           <sphere><radius>0.025</radius></sphere>
         </geometry>
         <material>
-          <ambient>0 1 0 1</ambient>
-          <diffuse>0 1 0 1</diffuse>
-          <emissive>0 1 0 1</emissive> </material>
-      </visual>
-
-      <visual name="led_lens_03">
-        <pose>0  -0.05 0  0 0 0</pose>
-        <geometry>
-          <sphere><radius>0.025</radius></sphere>
-        </geometry>
-        <material>
-          <ambient>0 1 0 1</ambient>
-          <diffuse>0 1 0 1</diffuse>
-          <emissive>0 1 0 1</emissive> </material>
+          <ambient>0 0 0 1</ambient>
+          <diffuse>0 0 0 1</diffuse>
+          <emissive>0 0 0 1</emissive> </material>
       </visual>
 
       <visual name="led_lens_04">
@@ -625,9 +608,9 @@
           <sphere><radius>0.025</radius></sphere>
         </geometry>
         <material>
-          <ambient>0 1 0 1</ambient>
-          <diffuse>0 1 0 1</diffuse>
-          <emissive>0 1 0 1</emissive> </material>
+          <ambient>0 0 0 1</ambient>
+          <diffuse>0 0 0 1</diffuse>
+          <emissive>0 0 0 1</emissive> </material>
       </visual>
     </link>
   
