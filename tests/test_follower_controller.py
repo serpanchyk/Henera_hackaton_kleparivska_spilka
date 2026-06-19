@@ -194,13 +194,22 @@ class FollowerControllerTests(unittest.TestCase):
         self.assertEqual(cmd.state, FollowerState.LOST)
         self.assertEqual(cmd.relay_state, MissionState.HOLD)
 
-    def test_lost_transitions_to_hold_after_lost_timeout(self):
+    def test_lost_transitions_to_search_after_lost_timeout(self):
         c = controller(lost_timeout=0.5)
         c.update(obs(t=0.0), current_time=0.0)
         c.update(obs(t=0.1, visible=False), current_time=0.1)
         cmd = c.update(obs(t=0.7, visible=False), current_time=0.7)
-        self.assertEqual(cmd.state, FollowerState.HOLD)
+        self.assertEqual(cmd.state, FollowerState.SEARCH)
         self.assertEqual(cmd.relay_state, MissionState.HOLD)
+        self.assertGreater(cmd.yaw_rate_deg_s, 0.0)
+
+    def test_hold_restarts_search_when_follow_continues_without_visibility(self):
+        c = controller()
+        c.update(obs(state=MissionState.SAFE), current_time=0.0)
+        cmd = c.update(obs(t=0.1, visible=False, state=MissionState.FOLLOW), current_time=0.1)
+        self.assertEqual(cmd.state, FollowerState.SEARCH)
+        self.assertEqual(cmd.relay_state, MissionState.HOLD)
+        self.assertGreater(cmd.yaw_rate_deg_s, 0.0)
 
     def test_invalid_mission_state_goes_directly_to_hold(self):
         cmd = controller().update(obs(state='BROKEN'), current_time=0.0)
@@ -226,6 +235,7 @@ class FollowerControllerTests(unittest.TestCase):
         relay_to_follower_2 = obs(t=0.1, state=hold1.relay_state, size=60.0)
         hold2 = c2.update(relay_to_follower_2, current_time=0.1)
 
+        self.assertEqual(hold1.state, FollowerState.LOST)
         self.assertEqual(hold1.relay_state, MissionState.HOLD)
         self.assertEqual(hold2.state, FollowerState.HOLD)
         self.assertEqual(hold2.forward_m_s, 0.0)

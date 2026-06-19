@@ -51,6 +51,7 @@ BEACON_HZ = 20.0
 WATCHDOG_S = 300.0
 FINISH_BROADCAST_S = 8.0   # how long the leader blinks FINISH before landing
 ACQUIRE_HOLD_S = 30.0      # leader hovers in place first so followers acquire + form up
+REQUIRE_ALL_FOLLOWERS_ACQUIRED = True
 STEP_M = 1.0               # leader route step size
 STEP_SLEEP_S = 1.2         # sleep per step -> leader cruise ~0.8 m/s (followers max 2 m/s)
 
@@ -106,7 +107,8 @@ async def _goto_slow(leader, start, end, yaw, stop_event):
         await asyncio.sleep(STEP_SLEEP_S)
 
 
-async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Event):
+async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Event,
+                     acquisition_event: asyncio.Event):
     try:
         # Form-up: hover at the first waypoint blinking FOLLOW so the followers can
         # SEARCH, acquire the LED pair, lock FOLLOW, and close to formation distance
@@ -114,7 +116,13 @@ async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Even
         first = LEADER_WAYPOINTS[0]
         await leader.go_to(first[0], first[1], first[2], yaw_deg=first[3])
         print(f'[leader] form-up hover {ACQUIRE_HOLD_S:.0f}s (followers acquire)')
-        await asyncio.sleep(ACQUIRE_HOLD_S)
+        try:
+            await asyncio.wait_for(acquisition_event.wait(), timeout=ACQUIRE_HOLD_S)
+            print('[leader] acquisition gate passed — starting route')
+        except asyncio.TimeoutError:
+            print('[leader] acquisition timeout — chain did not synchronize, aborting route')
+            stop_event.set()
+            return
 
         prev = first
         for wp in LEADER_WAYPOINTS[1:]:
@@ -139,22 +147,57 @@ async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Even
 
 # ─── Follower task ────────────────────────────────────────────────────────────
 
+def _chain_acquired(follower_status: dict, follower_ids: list[int]) -> bool:
+    if REQUIRE_ALL_FOLLOWERS_ACQUIRED:
+        return all(
+            follower_status.get(fid, {}).get('state') == FollowerState.FOLLOW
+            and follower_status.get(fid, {}).get('visible')
+            for fid in follower_ids
+        )
+    return (
+        follower_status.get(1, {}).get('state') == FollowerState.FOLLOW
+        and follower_status.get(1, {}).get('visible')
+    )
+
+
 async def run_one_follower(controller, provider, actuator, logger, drone_id,
-                           stop_event: asyncio.Event):
+                           stop_event: asyncio.Event, follower_status: dict,
+                           follower_ids: list[int], acquisition_event: asyncio.Event):
     period = 1.0 / CONTROL_HZ
     tick = 0
+    invisible_ticks = 0
     try:
         while not stop_event.is_set():
             obs = await provider.observe()
             cmd = controller.update(obs)
             await actuator.apply(cmd)
             tick += 1
+            if obs.target_visible:
+                invisible_ticks = 0
+            else:
+                invisible_ticks += 1
+            follower_status[drone_id] = {
+                'state': cmd.state,
+                'mission': obs.mission_state,
+                'visible': obs.target_visible,
+            }
+            if not acquisition_event.is_set() and _chain_acquired(follower_status, follower_ids):
+                acquired = ', '.join(
+                    f'{fid}:{_state_str(follower_status[fid]["state"])}'
+                    for fid in follower_ids
+                )
+                print(f'[main] acquisition gate satisfied ({acquired})', flush=True)
+                acquisition_event.set()
             if tick % 20 == 0:  # ~ every 2s, into run.log
                 print(f'[follower {drone_id}] state={_state_str(cmd.state)} '
                       f'mission={_state_str(obs.mission_state)} vis={obs.target_visible} '
                       f'h={obs.horizontal_angle_deg:.1f} v={obs.vertical_angle_deg:.1f} '
                       f'size={obs.target_size:.0f} fwd={cmd.forward_m_s:.2f} '
                       f'yaw_rate={cmd.yaw_rate_deg_s:.1f}', flush=True)
+            if invisible_ticks == int(CONTROL_HZ * 5):
+                print(f'[follower {drone_id}] WARN: no target LEDs visible for 5s '
+                      f'(mission={_state_str(obs.mission_state)}, state={_state_str(cmd.state)})',
+                      flush=True)
             logger.log(drone_id, {
                 'follower': controller.follower_id,
                 'target': controller.target_id,
@@ -260,6 +303,8 @@ async def main():
 
         # Followers: cameras already started above; build the perception+control chain.
         links = build_chain_config(FOLLOWER_COUNT)
+        follower_status = {}
+        acquisition_event = asyncio.Event()
         follower_tasks = []
         for link in links:
             fid = link.drone_id
@@ -271,10 +316,15 @@ async def main():
             provider = providers[fid]  # reuse the preview provider (windows already open)
             print(f'[main] {link.follower_id} (drone {fid}) -> {link.target_id}')
             follower_tasks.append(asyncio.create_task(
-                run_one_follower(controller, provider, actuator, logger, fid, stop_event)
+                run_one_follower(
+                    controller, provider, actuator, logger, fid, stop_event,
+                    follower_status, follower_ids, acquisition_event,
+                )
             ))
 
-        leader_task = asyncio.create_task(fly_leader(drones[0], beacon_state, stop_event))
+        leader_task = asyncio.create_task(
+            fly_leader(drones[0], beacon_state, stop_event, acquisition_event)
+        )
         wd_task = asyncio.create_task(watchdog(stop_event))
 
         await asyncio.gather(leader_task, *follower_tasks)

@@ -221,7 +221,8 @@ class FollowerController:
             return self._last_command
 
         if self.state == FollowerState.HOLD:
-            self._last_command = self._zero_command(FollowerState.HOLD, MissionState.HOLD)
+            self.state = FollowerState.SEARCH
+            self._last_command = self._search_command(observation)
             return self._last_command
 
         if self.state == FollowerState.FOLLOW:
@@ -236,8 +237,8 @@ class FollowerController:
             if self._lost_since is None:
                 self._lost_since = now
             if now - self._lost_since >= self.config.lost_timeout:
-                self.state = FollowerState.HOLD
-                self._last_command = self._zero_command(FollowerState.HOLD, MissionState.HOLD)
+                self.state = FollowerState.SEARCH
+                self._last_command = self._search_command(observation)
             else:
                 self._last_command = self._lost_command(observation)
             return self._last_command

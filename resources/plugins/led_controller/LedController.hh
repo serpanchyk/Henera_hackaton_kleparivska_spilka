@@ -41,7 +41,7 @@ private:
     gz::transport::Node node;
     
     std::mutex mutex;
-    std::string currentCommand{"ON"};
+    std::string currentCommand{"0000"};
     bool stateChanged{false};
 
     // --- NEW TIMING TRACKING VARIABLES ---
