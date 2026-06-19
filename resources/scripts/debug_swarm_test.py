@@ -48,6 +48,8 @@ EKF_SETTLE_S = 15.0          # wait after connect before arming (matches followe
 HOVER_SETTLE_S = 8.0         # wait for takeoff to reach hover
 CONTROL_HZ = 10.0
 WATCHDOG_S = 180.0           # hard cap on the whole test
+STRAIGHT_DISTANCE_M = 10.0
+FINAL_HOVER_S = 5.0
 
 # Gazebo world spawn poses (x=East, y=North, z=Up) — must match solution_launch.py
 SPAWNS = {
@@ -57,14 +59,11 @@ SPAWNS = {
     3: (128.24, 55.339, 1.4),
 }
 
-# Leader route in its OWN local NED: (north, east, down, yaw_deg, hold_s)
+# Leader route in its OWN local NED: (north, east, down, yaw_deg, hold_s).
+# Straight mission only: take off, fly forward, hold briefly, then land.
 LEADER_WAYPOINTS = [
-    (0.0, 0.0, -COMMON_ALT_M, 0.0, 5),       # settle, face North
-    (10.0, 0.0, -COMMON_ALT_M, 0.0, 8),      # 10 m North
-    (10.0, 10.0, -COMMON_ALT_M, 90.0, 8),    # turn East, 10 m East
-    (10.0, 10.0, -7.0, 90.0, 5),             # climb to 7 m
-    (0.0, 10.0, -7.0, 180.0, 8),             # turn South, 10 m South
-    (0.0, 0.0, -COMMON_ALT_M, 270.0, 8),     # turn West, return + descend
+    (0.0, 0.0, -COMMON_ALT_M, 0.0, 5),
+    (STRAIGHT_DISTANCE_M, 0.0, -COMMON_ALT_M, 0.0, FINAL_HOVER_S),
 ]
 
 

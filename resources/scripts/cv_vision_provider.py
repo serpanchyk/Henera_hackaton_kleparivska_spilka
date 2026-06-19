@@ -26,14 +26,60 @@ from drone_sdk.two_led_cv.types import TwoLedObservation
 HFOV_RAD = 1.6
 LED_BASELINE_M = 0.1077  # spacing between anchor and signal lenses on the model
 
-# HSV ranges (OpenCV H in 0..179). Red wraps around 0, so two bands.
+# HSV ranges (OpenCV H in 0..179). Red wraps around 0, so two bands. The signal
+# LED is relayed down the chain and seen small/dim at ~4 m, so the red band is kept
+# tolerant (lower S/V floor, wider hue) to avoid single-frame detection dropouts
+# that the decoder would otherwise read as a spurious fast blink (false FINISH).
 GREEN_RANGES = [((40, 60, 60), (90, 255, 255))]
-RED_RANGES = [((0, 90, 90), (12, 255, 255)), ((168, 90, 90), (180, 255, 255))]
+RED_RANGES = [((0, 70, 70), (14, 255, 255)), ((166, 70, 70), (180, 255, 255))]
+
+# Detection min area: a distant relay LED is only a few px, so keep this small but
+# above noise. Debounce (below) handles the residual single-frame flicker.
+_RED_MIN_AREA = 3.0
+
+# Visibility debounce: require this many consecutive frames before flipping the
+# stable visibility used by the decoder. At the ~10 Hz follower sampling rate a real
+# FINISH toggle (0.2 s) spans ~2 frames, so 2 preserves real blinks while rejecting
+# 1-frame detection dropouts on the relayed link.
+_VISIBILITY_DEBOUNCE_FRAMES = 2
 
 _KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
 
 
-def _detect_color(hsv, ranges, min_area=4.0, max_area=4000.0):
+class _VisibilityDebouncer:
+    """Reject single-frame visibility flips. A new raw value must persist for
+    `frames` consecutive samples before the debounced output changes."""
+
+    def __init__(self, frames: int = _VISIBILITY_DEBOUNCE_FRAMES):
+        self.frames = max(1, int(frames))
+        self._stable = False
+        self._pending = False
+        self._count = 0
+        self._seeded = False
+
+    def update(self, raw: bool) -> bool:
+        raw = bool(raw)
+        if not self._seeded:
+            self._stable = raw
+            self._pending = raw
+            self._seeded = True
+            return self._stable
+        if raw == self._stable:
+            self._pending = raw
+            self._count = 0
+            return self._stable
+        if raw == self._pending:
+            self._count += 1
+        else:
+            self._pending = raw
+            self._count = 1
+        if self._count >= self.frames:
+            self._stable = raw
+            self._count = 0
+        return self._stable
+
+
+def _detect_color(hsv, ranges, min_area=3.0, max_area=4000.0):
     """Return (cx, cy, area) of the largest blob matching any HSV range, or None."""
     mask = None
     for lo, hi in ranges:
@@ -64,6 +110,8 @@ class CVVisionProvider:
         self.drone = drone
         self.hfov_rad = hfov_rad
         self.decoder = TwoLedCommandDecoder()
+        self._anchor_debounce = _VisibilityDebouncer()
+        self._signal_debounce = _VisibilityDebouncer()
         self.show = show
         self.window_name = window_name or f'Follower {getattr(drone, "drone_id", "?")}'
         self.last_debug = {}
@@ -81,10 +129,12 @@ class CVVisionProvider:
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
         anchor = _detect_color(hsv, GREEN_RANGES)   # green = anchor
-        signal = _detect_color(hsv, RED_RANGES)     # red = signal
+        signal = _detect_color(hsv, RED_RANGES, min_area=_RED_MIN_AREA)  # red = signal
 
-        anchor_visible = anchor is not None
-        signal_visible = signal is not None
+        # Debounce visibility so a single dropped frame on the relayed link does not
+        # look like a blink transition to the decoder (the false-FINISH trigger).
+        anchor_visible = self._anchor_debounce.update(anchor is not None)
+        signal_visible = self._signal_debounce.update(signal is not None)
         state = self.decoder.update(anchor_visible=anchor_visible,
                                     signal_visible=signal_visible, now=now)
 

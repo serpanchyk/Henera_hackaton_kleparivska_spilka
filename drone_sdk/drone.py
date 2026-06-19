@@ -197,14 +197,29 @@ class Drone:
         self._require_connected()
         pos = await self.position_ned()
         hdg = await self.heading()
-        setpoint = PositionNedYaw(pos.north_m, pos.east_m, pos.down_m, 0.0)
-        for _ in range(5):
+        setpoint = PositionNedYaw(pos.north_m, pos.east_m, pos.down_m, hdg)
+        # PX4 needs to receive a valid stream before accepting Offboard mode.
+        # A short warm-up is not always enough just after takeoff in SITL.
+        for _ in range(20):
             await self._sys.offboard.set_position_ned(setpoint)
             await asyncio.sleep(0.05)
         try:
             await self._sys.offboard.start()
         except OffboardError as e:
-            raise MAVSDKError(f'Offboard start failed for drone {self.drone_id}: {e}')
+            if 'NO_SETPOINT_SET' not in str(e):
+                raise MAVSDKError(f'Offboard start failed for drone {self.drone_id}: {e}')
+            # Retry once with an explicit zero-velocity stream. Some PX4/MAVSDK
+            # SITL runs accept velocity setpoints more reliably during startup.
+            zero_velocity = VelocityNedYaw(0.0, 0.0, 0.0, hdg)
+            for _ in range(20):
+                await self._sys.offboard.set_velocity_ned(zero_velocity)
+                await asyncio.sleep(0.05)
+            try:
+                await self._sys.offboard.start()
+            except OffboardError as retry_error:
+                raise MAVSDKError(
+                    f'Offboard start failed for drone {self.drone_id}: {retry_error}'
+                )
 
     async def stop_offboard(self) -> None:
         self._require_connected()

@@ -130,6 +130,34 @@ class TwoLedCommandDecoderTests(unittest.TestCase):
         self.assertAlmostEqual(stats['anchor_ratio'], 1.0)
         self.assertGreater(stats['transitions_per_s'], 1.0)
 
+    def test_relayed_follow_with_single_frame_dropouts_stays_follow(self):
+        # Regression: a relayed FOLLOW link drops the signal LED for one frame here
+        # and there (detection noise at ~4 m). With the decoder fed already-debounced
+        # input this is just steady FOLLOW; raw 1-frame dropouts must never be read as
+        # a fast blink that crosses the FINISH band (the bug that killed followers 2/3).
+        decoder = TwoLedCommandDecoder(window_s=1.0, min_samples=8)
+        t, decoded = self.feed_state(decoder, FOLLOW, 0.0, duration_s=1.5)
+        self.assertEqual(decoded, FOLLOW)
+
+        # Solid ON with an isolated single-frame dropout every ~0.5 s.
+        for index in range(60):
+            signal_visible = not (index % 10 == 0)  # one frame off in every ten
+            decoded = decoder.update(anchor_visible=True, signal_visible=signal_visible, now=t)
+            t += 0.05
+
+        self.assertEqual(decoded, FOLLOW)
+        self.assertNotEqual(decoder.debug_stats()['current_state'], FINISH)
+
+    def test_finish_requires_sustained_confirmation_before_committing(self):
+        # A real leader FINISH (clean 0.2 s toggle) still commits, but only after the
+        # raised confirmation threshold — a brief noisy burst must not flip to FINISH.
+        decoder = TwoLedCommandDecoder(window_s=1.0, min_samples=8)
+        t, decoded = self.feed_state(decoder, FOLLOW, 0.0, duration_s=1.5)
+        self.assertEqual(decoded, FOLLOW)
+
+        _, decoded = self.feed_state(decoder, FINISH, t, duration_s=3.0)
+        self.assertEqual(decoded, FINISH)
+
     def test_demo_generated_timestamps_runs_all_required_segments(self):
         rows = demo_generated_timestamps()
         commanded_states = {commanded for _, commanded, _ in rows}

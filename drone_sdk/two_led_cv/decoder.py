@@ -16,11 +16,18 @@ class LedSample:
 class TwoLedCommandDecoder:
     """Decode leader mission state from LED 4 visibility over time."""
 
+    # Most states commit after 2 confirming windows. FINISH is terminal (it latches
+    # and stops the follower), so it must clear a much higher bar to survive the
+    # transient blink noise on a relayed link that previously produced false FINISH.
+    DEFAULT_COMMIT_COUNT = 2
+    FINISH_COMMIT_COUNT = 5
+
     def __init__(
         self,
         window_s: float = 2.0,
         min_samples: int = 10,
         finish_latches: bool = True,
+        finish_commit_count: int = FINISH_COMMIT_COUNT,
     ) -> None:
         if window_s <= 0.0:
             raise ValueError('window_s must be positive')
@@ -34,6 +41,10 @@ class TwoLedCommandDecoder:
         self.candidate_state = UNKNOWN
         self.candidate_count = 0
         self.finish_latches = bool(finish_latches)
+        self.finish_commit_count = max(1, int(finish_commit_count))
+
+    def _commit_threshold(self, decoded: str) -> int:
+        return self.finish_commit_count if decoded == FINISH else self.DEFAULT_COMMIT_COUNT
 
     def update(
         self,
@@ -69,7 +80,7 @@ class TwoLedCommandDecoder:
             self.candidate_state = decoded
             self.candidate_count = 1
 
-        if self.candidate_count >= 2:
+        if self.candidate_count >= self._commit_threshold(decoded):
             self.current_state = decoded
             self.candidate_count = 0
 

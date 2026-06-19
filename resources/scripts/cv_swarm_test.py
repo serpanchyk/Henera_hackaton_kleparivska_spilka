@@ -55,6 +55,9 @@ BEACON_HZ = 20.0
 TRUTH_LOG_HZ = 1.0
 WATCHDOG_S = 300.0
 FINISH_BROADCAST_S = 15.0  # how long the leader blinks FINISH before landing
+FINISH_DESCENT_SPEED_MS = 0.6   # follower descent rate after a confirmed FINISH
+FINISH_DESCENT_TIMEOUT_S = 25.0 # cap on the descent before the follower task exits
+FINISH_GROUND_ALT_M = 1.2       # altitude at which the descent is considered done
 ACQUIRE_HOLD_S = 30.0      # leader hovers in place first so followers acquire + form up
 REQUIRE_ALL_FOLLOWERS_ACQUIRED = True
 ROUTE_RECOVERY_PAUSE_S = 20.0
@@ -216,35 +219,36 @@ def _relative_truth(follower: dict, target: dict) -> dict:
 
 # ─── Leader route ───────────────────────────────────────────────────────────
 
-def _route_chain_ready(follower_status: dict, follower_ids: list[int]) -> bool:
-    return all(
-        follower_status.get(fid, {}).get('state') == FollowerState.FOLLOW
-        and follower_status.get(fid, {}).get('visible')
-        for fid in follower_ids
-    )
+# The leader's DIRECT follower is drone 1; only its link is gated. Followers 2/3
+# ride the relay chain and must never be able to stall the leader's route (that was
+# the old bug — a single follower hiccup blocked the whole 20 m route forever).
+def _direct_follower_ready(follower_status: dict) -> bool:
+    status = follower_status.get(1, {})
+    return status.get('state') == FollowerState.FOLLOW and bool(status.get('visible'))
 
 
-async def _wait_route_chain_ready(leader, current, yaw, stop_event, follower_status, follower_ids):
-    if _route_chain_ready(follower_status, follower_ids):
+async def _maybe_pause_for_follower_1(leader, current, yaw, stop_event, follower_status):
+    """At most ONE short, time-capped hover if follower 1 has momentarily lost the
+    leader. Always returns so the route continues — the leader flies the full 20 m."""
+    if _direct_follower_ready(follower_status):
         return
-    missing = ', '.join(
-        f'{fid}:{_state_str(follower_status.get(fid, {}).get("state", "?"))}'
-        f'/vis={follower_status.get(fid, {}).get("visible", "?")}'
-        for fid in follower_ids
-    )
-    print(f'[leader] pausing route for follower recovery ({missing})', flush=True)
+    print('[leader] follower 1 not locked — short hover before continuing', flush=True)
     deadline = asyncio.get_running_loop().time() + ROUTE_RECOVERY_PAUSE_S
     while not stop_event.is_set() and asyncio.get_running_loop().time() < deadline:
         await leader.go_to(current[0], current[1], current[2], yaw_deg=yaw)
         await asyncio.sleep(ROUTE_RECOVERY_POLL_S)
-        if _route_chain_ready(follower_status, follower_ids):
-            print('[leader] follower chain recovered — resuming route', flush=True)
+        if _direct_follower_ready(follower_status):
+            print('[leader] follower 1 recovered — resuming route', flush=True)
             return
-    print('[leader] follower chain still degraded — continuing slowly', flush=True)
+    print('[leader] follower 1 still degraded — continuing route anyway', flush=True)
 
 
 async def _goto_slow(leader, start, end, yaw, stop_event, follower_status, follower_ids):
-    """Fly from start (n,e,d) to end (n,e,d) in small steps so followers keep up."""
+    """Fly from start (n,e,d) to end (n,e,d) in small steps so followers keep up.
+
+    The route is unconditional: it always advances to `end` at the slow cruise rate.
+    A single bounded hover may occur per step only when the leader's direct follower
+    (drone 1) has lost lock, but the leader never waits indefinitely."""
     n0, e0, d0 = start
     n1, e1, d1 = end
     dist = math.sqrt((n1 - n0) ** 2 + (e1 - e0) ** 2 + (d1 - d0) ** 2)
@@ -253,7 +257,7 @@ async def _goto_slow(leader, start, end, yaw, stop_event, follower_status, follo
     for k in range(1, steps + 1):
         if stop_event.is_set():
             return
-        await _wait_route_chain_ready(leader, current, yaw, stop_event, follower_status, follower_ids)
+        await _maybe_pause_for_follower_1(leader, current, yaw, stop_event, follower_status)
         f = k / steps
         current = (n0 + (n1 - n0) * f, e0 + (e1 - e0) * f, d0 + (d1 - d0) * f)
         await leader.go_to(current[0], current[1], current[2], yaw_deg=yaw)
@@ -274,9 +278,7 @@ async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Even
             await asyncio.wait_for(acquisition_event.wait(), timeout=ACQUIRE_HOLD_S)
             print('[leader] acquisition gate passed — starting route')
         except asyncio.TimeoutError:
-            print('[leader] acquisition timeout — chain did not synchronize, aborting route')
-            stop_event.set()
-            return
+            print('[leader] acquisition timeout — continuing straight route anyway')
 
         prev = first
         for wp in LEADER_WAYPOINTS[1:]:
@@ -337,6 +339,7 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
     last_reported_state = None
     last_reported_visible = None
     last_reported_mission = None
+    finish_since = None
     try:
         while not stop_event.is_set():
             raw_obs = await provider.observe()
@@ -432,8 +435,27 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
                 'yaw_rate': round(cmd.yaw_rate_deg_s, 3),
             })
             if cmd.state == FollowerState.FINISH:
-                print(f'[follower {drone_id}] FINISH')
-                break
+                # Do NOT break here — that would stop calling provider.observe(),
+                # which is what spins the camera and draws the window (the old bug
+                # that froze followers 2/3). Keep the loop alive and descend gently;
+                # relay_state=FINISH is already published so the next drone follows.
+                if finish_since is None:
+                    finish_since = asyncio.get_running_loop().time()
+                    print(f'[follower {drone_id}] FINISH received — descending (camera stays live)',
+                          flush=True)
+                heading = await actuator.drone.heading()
+                await actuator.drone.set_velocity(
+                    0.0, 0.0, FINISH_DESCENT_SPEED_MS, yaw_deg=heading,
+                )
+                altitude_m = await _altitude_or_none(actuator.drone)
+                elapsed = asyncio.get_running_loop().time() - finish_since
+                if ((altitude_m is not None and altitude_m <= FINISH_GROUND_ALT_M)
+                        or elapsed >= FINISH_DESCENT_TIMEOUT_S):
+                    print(f'[follower {drone_id}] FINISH descent complete '
+                          f'(alt={_fmt(altitude_m)} t={elapsed:.0f}s)', flush=True)
+                    break
+                await asyncio.sleep(period)
+                continue
             await asyncio.sleep(period)
     except asyncio.CancelledError:
         pass
