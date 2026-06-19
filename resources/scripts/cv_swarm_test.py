@@ -54,9 +54,11 @@ CONTROL_HZ = 10.0
 BEACON_HZ = 20.0
 TRUTH_LOG_HZ = 1.0
 WATCHDOG_S = 300.0
-FINISH_BROADCAST_S = 8.0   # how long the leader blinks FINISH before landing
+FINISH_BROADCAST_S = 15.0  # how long the leader blinks FINISH before landing
 ACQUIRE_HOLD_S = 30.0      # leader hovers in place first so followers acquire + form up
 REQUIRE_ALL_FOLLOWERS_ACQUIRED = True
+ROUTE_RECOVERY_PAUSE_S = 20.0
+ROUTE_RECOVERY_POLL_S = 0.5
 STEP_M = 1.0               # leader route step size
 STEP_SLEEP_S = 2.5         # sleep per step -> leader cruise ~0.4 m/s while CV is noisy
 TRAIN_YAW_RAD = 3.7346
@@ -214,22 +216,53 @@ def _relative_truth(follower: dict, target: dict) -> dict:
 
 # ─── Leader route ───────────────────────────────────────────────────────────
 
-async def _goto_slow(leader, start, end, yaw, stop_event):
+def _route_chain_ready(follower_status: dict, follower_ids: list[int]) -> bool:
+    return all(
+        follower_status.get(fid, {}).get('state') == FollowerState.FOLLOW
+        and follower_status.get(fid, {}).get('visible')
+        for fid in follower_ids
+    )
+
+
+async def _wait_route_chain_ready(leader, current, yaw, stop_event, follower_status, follower_ids):
+    if _route_chain_ready(follower_status, follower_ids):
+        return
+    missing = ', '.join(
+        f'{fid}:{_state_str(follower_status.get(fid, {}).get("state", "?"))}'
+        f'/vis={follower_status.get(fid, {}).get("visible", "?")}'
+        for fid in follower_ids
+    )
+    print(f'[leader] pausing route for follower recovery ({missing})', flush=True)
+    deadline = asyncio.get_running_loop().time() + ROUTE_RECOVERY_PAUSE_S
+    while not stop_event.is_set() and asyncio.get_running_loop().time() < deadline:
+        await leader.go_to(current[0], current[1], current[2], yaw_deg=yaw)
+        await asyncio.sleep(ROUTE_RECOVERY_POLL_S)
+        if _route_chain_ready(follower_status, follower_ids):
+            print('[leader] follower chain recovered — resuming route', flush=True)
+            return
+    print('[leader] follower chain still degraded — continuing slowly', flush=True)
+
+
+async def _goto_slow(leader, start, end, yaw, stop_event, follower_status, follower_ids):
     """Fly from start (n,e,d) to end (n,e,d) in small steps so followers keep up."""
     n0, e0, d0 = start
     n1, e1, d1 = end
     dist = math.sqrt((n1 - n0) ** 2 + (e1 - e0) ** 2 + (d1 - d0) ** 2)
     steps = max(1, int(math.ceil(dist / STEP_M)))
+    current = start
     for k in range(1, steps + 1):
         if stop_event.is_set():
             return
+        await _wait_route_chain_ready(leader, current, yaw, stop_event, follower_status, follower_ids)
         f = k / steps
-        await leader.go_to(n0 + (n1 - n0) * f, e0 + (e1 - e0) * f, d0 + (d1 - d0) * f, yaw_deg=yaw)
+        current = (n0 + (n1 - n0) * f, e0 + (e1 - e0) * f, d0 + (d1 - d0) * f)
+        await leader.go_to(current[0], current[1], current[2], yaw_deg=yaw)
         await asyncio.sleep(STEP_SLEEP_S)
 
 
 async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Event,
-                     acquisition_event: asyncio.Event):
+                     acquisition_event: asyncio.Event, follower_status: dict,
+                     follower_ids: list[int]):
     try:
         # Form-up: hover at the first waypoint blinking FOLLOW so the followers can
         # SEARCH, acquire the LED pair, lock FOLLOW, and close to formation distance
@@ -250,7 +283,10 @@ async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Even
             if stop_event.is_set():
                 break
             print(f'[leader] -> N={wp[0]} E={wp[1]} D={wp[2]} yaw={wp[3]} (slow)')
-            await _goto_slow(leader, prev[:3], wp[:3], wp[3], stop_event)
+            await _goto_slow(
+                leader, prev[:3], wp[:3], wp[3], stop_event,
+                follower_status, follower_ids,
+            )
             await asyncio.sleep(wp[4])
             prev = wp
 
@@ -556,6 +592,7 @@ async def main():
                     kp_forward=0.05,
                     max_forward_speed=1.5,
                     lost_timeout=1.0,
+                    lost_command_memory_s=0.8,
                 ),
             )
             actuator = DroneFollowerActuator(drones[fid])
@@ -573,7 +610,10 @@ async def main():
             truth_logger(drones, logger, follower_status, stop_event)
         )
         leader_task = asyncio.create_task(
-            fly_leader(drones[0], beacon_states[0], stop_event, acquisition_event)
+            fly_leader(
+                drones[0], beacon_states[0], stop_event, acquisition_event,
+                follower_status, follower_ids,
+            )
         )
         wd_task = asyncio.create_task(watchdog(stop_event))
 

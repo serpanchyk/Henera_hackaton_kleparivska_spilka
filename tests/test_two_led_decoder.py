@@ -85,6 +85,38 @@ class TwoLedCommandDecoderTests(unittest.TestCase):
 
         self.assertEqual(decoded, SAFE)
 
+    def test_noisy_finish_blink_decodes_without_perfect_regular_intervals(self):
+        decoder = TwoLedCommandDecoder(window_s=1.0, min_samples=8)
+        t, decoded = self.feed_state(decoder, FOLLOW, 0.0, duration_s=1.5)
+        self.assertEqual(decoded, FOLLOW)
+
+        jittered_samples = [
+            (0.00, True), (0.09, True), (0.21, False), (0.29, False),
+            (0.43, True), (0.51, True), (0.62, False), (0.74, False),
+            (0.85, True), (0.96, True), (1.05, False), (1.17, False),
+        ]
+        for base in (0.0, 1.2):
+            for offset, signal_visible in jittered_samples:
+                decoded = decoder.update(
+                    anchor_visible=True,
+                    signal_visible=signal_visible,
+                    now=t + base + offset,
+                )
+
+        self.assertEqual(decoded, FINISH)
+
+    def test_finish_latches_after_later_noisy_or_safe_samples(self):
+        decoder = TwoLedCommandDecoder(window_s=1.0, min_samples=8)
+        t, decoded = self.feed_state(decoder, FINISH, 0.0, duration_s=2.0)
+        self.assertEqual(decoded, FINISH)
+
+        for _ in range(30):
+            decoded = decoder.update(anchor_visible=True, signal_visible=False, now=t)
+            t += 0.05
+
+        self.assertEqual(decoded, FINISH)
+        self.assertEqual(decoder.debug_stats()['current_state'], FINISH)
+
     def test_debug_stats_reports_current_window_values(self):
         decoder = TwoLedCommandDecoder(window_s=1.0, min_samples=4)
         _, decoded = self.feed_state(decoder, HOLD, 0.0, duration_s=1.5)

@@ -56,6 +56,7 @@ class FollowerControllerConfig:
     control_rate_hz: float = 10.0
     yaw_sign: float = 1.0
     vertical_sign: float = 1.0
+    lost_command_memory_s: float = 0.0
 
     @classmethod
     def stable(cls) -> 'FollowerControllerConfig':
@@ -240,7 +241,7 @@ class FollowerController:
                 self.state = FollowerState.SEARCH
                 self._last_command = self._search_command(observation)
             else:
-                self._last_command = self._lost_command(observation)
+                self._last_command = self._lost_command(observation, now)
             return self._last_command
 
         self.state = FollowerState.SEARCH
@@ -316,8 +317,14 @@ class FollowerController:
             size_error=None,
         )
 
-    def _lost_command(self, observation: Optional[VisualObservation]) -> FollowerCommand:
-        alpha = self._bounded_alpha()
+    def _lost_command(self, observation: Optional[VisualObservation], now: Optional[float] = None) -> FollowerCommand:
+        keep_previous = (
+            self.config.lost_command_memory_s > 0.0
+            and now is not None
+            and self._lost_since is not None
+            and now - self._lost_since <= self.config.lost_command_memory_s
+        )
+        alpha = self._bounded_alpha() if keep_previous else 0.0
         return FollowerCommand(
             forward_m_s=0.0,
             right_m_s=0.0,

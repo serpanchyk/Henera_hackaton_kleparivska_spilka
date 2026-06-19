@@ -20,6 +20,7 @@ class TwoLedCommandDecoder:
         self,
         window_s: float = 2.0,
         min_samples: int = 10,
+        finish_latches: bool = True,
     ) -> None:
         if window_s <= 0.0:
             raise ValueError('window_s must be positive')
@@ -32,6 +33,7 @@ class TwoLedCommandDecoder:
         self.current_state = UNKNOWN
         self.candidate_state = UNKNOWN
         self.candidate_count = 0
+        self.finish_latches = bool(finish_latches)
 
     def update(
         self,
@@ -48,6 +50,9 @@ class TwoLedCommandDecoder:
             )
         )
         self._prune(timestamp)
+
+        if self.finish_latches and self.current_state == FINISH:
+            return self.current_state
 
         decoded = self._decode_window()
         if decoded == UNKNOWN:
@@ -92,7 +97,7 @@ class TwoLedCommandDecoder:
 
         anchor_ratio, signal_on_ratio, transitions_per_s = self._window_stats()
         transition_count = self._count_transitions()
-        balanced_blink = 0.25 <= signal_on_ratio <= 0.75
+        balanced_blink = 0.20 <= signal_on_ratio <= 0.80
         regular_blink = self._has_regular_transitions()
         if anchor_ratio < 0.6:
             return UNKNOWN
@@ -101,10 +106,15 @@ class TwoLedCommandDecoder:
             return FOLLOW
         if signal_on_ratio < 0.15 and transitions_per_s < 1.0:
             return SAFE
+        if (
+            transition_count >= 3
+            and balanced_blink
+            and 3.3 <= transitions_per_s <= 7.5
+            and self._has_finish_transitions()
+        ):
+            return FINISH
         if transition_count >= 2 and balanced_blink and regular_blink and 1.0 <= transitions_per_s <= 3.2:
             return HOLD
-        if transition_count >= 3 and balanced_blink and regular_blink and 3.5 <= transitions_per_s <= 7.0:
-            return FINISH
         return UNKNOWN
 
     def _window_stats(self) -> tuple[float, float, float]:
@@ -149,6 +159,28 @@ class TwoLedCommandDecoder:
 
         max_deviation = max(abs(interval - average_interval) for interval in intervals)
         return max_deviation <= max(0.03, average_interval * 0.25)
+
+    def _has_finish_transitions(self) -> bool:
+        transition_times: list[float] = []
+        previous = self.samples[0].signal_visible
+        for sample in self.samples[1:]:
+            if sample.signal_visible != previous:
+                transition_times.append(sample.t)
+                previous = sample.signal_visible
+
+        if len(transition_times) < 4:
+            return False
+
+        intervals = [
+            transition_times[index] - transition_times[index - 1]
+            for index in range(1, len(transition_times))
+        ]
+        average_interval = sum(intervals) / len(intervals)
+        if not 0.12 <= average_interval <= 0.35:
+            return False
+
+        max_deviation = max(abs(interval - average_interval) for interval in intervals)
+        return max_deviation <= max(0.08, average_interval * 0.45)
 
 
 def demo_generated_timestamps() -> list[tuple[float, str, str]]:

@@ -203,6 +203,19 @@ class FollowerControllerTests(unittest.TestCase):
         self.assertEqual(cmd.relay_state, MissionState.HOLD)
         self.assertGreater(cmd.yaw_rate_deg_s, 0.0)
 
+    def test_lost_can_briefly_preserve_last_yaw_and_vertical_correction(self):
+        c = controller(smoothing_alpha=0.5, lost_command_memory_s=0.3)
+        follow = c.update(obs(t=0.0, h=10.0, v=4.0), current_time=0.0)
+        lost = c.update(obs(t=0.1, visible=False), current_time=0.1)
+        expired = c.update(obs(t=0.5, visible=False), current_time=0.5)
+
+        self.assertEqual(follow.state, FollowerState.FOLLOW)
+        self.assertEqual(lost.state, FollowerState.LOST)
+        self.assertGreater(lost.yaw_rate_deg_s, 0.0)
+        self.assertGreater(lost.down_m_s, 0.0)
+        self.assertEqual(expired.yaw_rate_deg_s, 0.0)
+        self.assertEqual(expired.down_m_s, 0.0)
+
     def test_hold_restarts_search_when_follow_continues_without_visibility(self):
         c = controller()
         c.update(obs(state=MissionState.SAFE), current_time=0.0)
