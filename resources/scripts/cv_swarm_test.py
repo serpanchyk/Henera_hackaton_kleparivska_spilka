@@ -24,10 +24,7 @@ import signal
 import sys
 
 _REPO_ROOT = os.path.join(os.path.dirname(__file__), '..', '..')
-# drone_sdk now lives under examples/ (camera-frame-dedup merge), so put that on the
-# path too — keep the repo root as a fallback for older layouts.
 sys.path.insert(0, _REPO_ROOT)
-sys.path.insert(0, os.path.join(_REPO_ROOT, 'examples'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import rclpy
@@ -43,8 +40,8 @@ from drone_sdk.follower_controller import (
     build_chain_config,
 )
 from drone_sdk.two_led_cv import mask_for_state
-from cv_vision_provider import CVVisionProvider
-from results_logger import ResultsLogger
+from henera_swarm.logging import ResultsLogger
+from henera_swarm.perception import CVVisionProvider
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 

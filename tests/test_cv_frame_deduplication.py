@@ -11,7 +11,14 @@ import numpy as np
 from drone_sdk.ros_node import CameraFramePacket, DroneROSNode
 
 ROOT = Path(__file__).resolve().parents[1]
-PROVIDER_PATH = ROOT / 'resources' / 'scripts' / 'cv_vision_provider.py'
+PROVIDER_PATH = (
+    ROOT
+    / 'resources'
+    / 'scripts'
+    / 'henera_swarm'
+    / 'perception'
+    / 'cv_vision_provider.py'
+)
 
 
 def _load_provider_module():
