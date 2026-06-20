@@ -15,28 +15,35 @@
 # backs off gently rather than slamming into reverse). CV tracking degrades at
 # high speed, so raise leader_cruise_m_s gradually.
 speeds:
-  leader_cruise_m_s: 0.8        # eased so followers can hold formation + CV stays reliable
-  follower_forward_ratio: 1.8   # follower max forward = leader_cruise * this (=1.44 m/s; headroom to actually close the gap)
+  leader_cruise_m_s: 0.6        # was 0.8; followers were saturating fwd=1.44 yet still lagging to ~4.8 m, so the
+                                # leader's hard turns (yaw -109->-142->-91) threw it out of frame -> follower 1 lost it.
+                                # A slower leader gives the chain margin to hold formation through turns.
+  follower_forward_ratio: 2.4   # was 1.8; raised so follower max forward stays =1.44 m/s (0.6*2.4) — full catch-up
+                                # headroom is preserved even though the leader is slower.
   follower_reverse_ratio: 0.4   # follower max reverse = leader_cruise * this
 
 # ── Follower controller (vision -> velocity gains, dead zones, timeouts) ─────
 # Forward/reverse speed caps are NOT here — they come from `speeds` above.
 follower_control:
-  desired_target_size: 90.0     # ~2.6 m hold distance — just BEHIND the 2.5 m spawn spacing, so followers
-                                # ease back into formation instead of charging/crowding the leader (the crash cause).
-                                # Was 130 (~1.7 m) which drove follower 1 into the leader's wake -> fell out of the sky.
+  desired_target_size: 100.0    # was 90 (~2.6 m); followers actually held ~3.5-4.8 m (blob shrank to ~50 px, near the
+                                # 45 px acquire floor) so turns dropped the leader out of frame. 100 px (~2.35 m) keeps
+                                # them closer with a bigger, more robust blob — still behind the 2.5 m spacing, clear of
+                                # the ~1.7 m wake zone that crashed follower 1 at size 130.
   kp_yaw: 1.0
-  kp_forward: 0.05              # tighter hold: 0.03 let follower 1 drift to ~6 m and lose the leader; 0.06 (with the
-                                # old close gap) oscillated, but at desired_size=90 there's no crowding, so 0.05 is safe
+  kp_forward: 0.08             # was 0.05; too weak to actually close the gap (followers sat at max fwd yet stayed ~4 m
+                                # back). Stronger so they pull up to the 100 px hold instead of trailing out of FOV.
   kp_vertical: 0.02
-  max_yaw_rate: 22.0            # deg/s; gentler so a re-lock at a wide angle doesn't spin/crash
+  max_yaw_rate: 28.0            # was 22; bear_err hit ~19 deg on the leader's turns and yaw lagged, letting the leader
+                                # slide out of frame. A bit faster keeps it centered through turns (still gentle enough
+                                # to avoid the spin-on-relock crash).
   max_vertical_speed: 0.4       # m/s; cap the dives + slow the sink when chasing a target that drifted low
   yaw_dead_zone_deg: 1.0
   vertical_dead_zone_deg: 1.0
   size_dead_zone: 5.0           # px; ignore size error smaller than this
-  lost_timeout: 2.0             # s of no target before SEARCH
+  lost_timeout: 3.0             # was 2.0; the leader's turns caused brief blink-outs that tripped SEARCH and stalled the
+                                # whole chain behind follower 1 ("stuck"). Ride out the short dropout instead.
   observation_timeout: 0.5      # s; older observations are treated as stale
-  lost_frames_threshold: 3      # was 1; tolerate brief detection dropouts instead of stalling forward on a single miss
+  lost_frames_threshold: 5      # was 3; tolerate a longer detection gap through a turn before declaring the target lost
   reacquire_frames: 2           # was 3; resume FOLLOW after 2 good frames — fast enough to keep up, but >1 so a
                                 # single stray blob during SEARCH can't lock the wrong drone (-> spin/crash)
   smoothing_alpha: 0.5          # some damping for stability, but less sluggish than 0.55 so forward tracks the leader
@@ -47,8 +54,8 @@ follower_control:
   control_rate_hz: 10.0
   yaw_sign: 1.0
   vertical_sign: 1.0
-  lost_command_memory_s: 0.6    # was 0.0; briefly hold the last yaw/vertical correction through a short dropout
-                                # (keeps the target roughly centered instead of freezing the instant it blinks out)
+  lost_command_memory_s: 1.2    # was 0.6; hold the last yaw/vertical correction longer through a turn-induced dropout
+                                # so the follower keeps tracking the leader's arc instead of freezing and falling behind
 
 # ── Perception / acquisition thresholds ──────────────────────────────────────
 perception:
