@@ -282,6 +282,20 @@ class Drone:
             return None
         return self._ros.frame()
 
+    def camera_frame_with_metadata(self):
+        """Get the latest CameraFramePacket with callback identity and time."""
+        if self._ros is None:
+            return None
+        return self._ros.frame_with_metadata()
+
+    def camera_diagnostics(self) -> dict[str, int]:
+        if self._ros is None:
+            return {
+                'camera_callback_count': 0,
+                'latest_frame_sequence': 0,
+            }
+        return self._ros.camera_diagnostics()
+
     def spin(self) -> None:
         """Process one ROS2 callback inline (call before camera_frame())."""
         if self._ros is None:

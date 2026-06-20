@@ -92,6 +92,7 @@ class TwoLedCommandDecoder:
             'sample_count': len(self.samples),
             'anchor_ratio': anchor_ratio,
             'signal_on_ratio': signal_on_ratio,
+            'transition_count': self._count_transitions(),
             'transitions_per_s': transitions_per_s,
             'current_state': self.current_state,
             'candidate_state': self.candidate_state,
@@ -141,6 +142,8 @@ class TwoLedCommandDecoder:
         return anchor_ratio, signal_on_ratio, transitions_per_s
 
     def _count_transitions(self) -> int:
+        if not self.samples:
+            return 0
         transitions = 0
         previous = self.samples[0].signal_visible
         for sample in self.samples[1:]:
