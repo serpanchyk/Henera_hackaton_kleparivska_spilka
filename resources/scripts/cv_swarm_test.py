@@ -18,6 +18,7 @@ shows exactly led_lens_01 + led_lens_04). Otherwise the detector sees the old
 Run via resources/scripts/cv_launch.py (sim + this), or standalone after sim is up.
 """
 import asyncio
+import json
 import math
 import os
 import signal
@@ -53,17 +54,21 @@ TAKEOFF_TOLERANCE_M = 0.75
 CONTROL_HZ = 10.0
 BEACON_HZ = 20.0
 TRUTH_LOG_HZ = 1.0
-WATCHDOG_S = 300.0
+# Time cap. Overridable because a long converted mission route (e.g. ~240 m) takes
+# far longer than the default straight 20 m segment.
+WATCHDOG_S = float(os.environ.get('WATCHDOG_S', '300'))
 FINISH_BROADCAST_S = 15.0  # how long the leader blinks FINISH before landing
 FINISH_DESCENT_SPEED_MS = 0.6   # follower descent rate after a confirmed FINISH
 FINISH_DESCENT_TIMEOUT_S = 25.0 # cap on the descent before the follower task exits
 FINISH_GROUND_ALT_M = 1.2       # altitude at which the descent is considered done
 ACQUIRE_HOLD_S = 30.0      # leader hovers in place first so followers acquire + form up
 REQUIRE_ALL_FOLLOWERS_ACQUIRED = True
-ROUTE_RECOVERY_PAUSE_S = 20.0
-ROUTE_RECOVERY_POLL_S = 0.5
-STEP_M = 1.0               # leader route step size
-STEP_SLEEP_S = 2.5         # sleep per step -> leader cruise ~0.4 m/s while CV is noisy
+# Leader flight tuning. The route logic is ported from Mission/mission_launch.py:
+# each leg is interpolated at LEADER_LOOP_RATE_HZ using its per-leg speed.
+LEADER_SPEED_MPS = float(os.environ.get('LEADER_SPEED_MPS', '1.0'))
+LEADER_LOOP_RATE_HZ = float(os.environ.get('LEADER_LOOP_RATE_HZ', '10.0'))
+# yaw mode: 'file' = JSON yaw_deg, 'path' = face the leg, 'current' = keep spawn heading
+LEADER_YAW_MODE = os.environ.get('LEADER_YAW_MODE', 'file').strip().lower()
 TRAIN_YAW_RAD = 3.7346
 TRAIN_YAW_DEG = math.degrees(TRAIN_YAW_RAD)
 STRAIGHT_ROUTE_M = 20.0
@@ -85,13 +90,95 @@ for _idx in range(1, FOLLOWER_COUNT + 1):
         SPAWN_Z_M,
     )
 
-# Leader route in its OWN local NED: (north, east, down, yaw_deg, hold_s)
-# Single straight segment along the same yaw used by the spawn train. This keeps
-# the leader from turning at route start and keeps follower cameras aimed forward.
+# Leader route in its OWN local NED. Each waypoint is a dict:
+#   north_m, east_m, down_m (offset from waypoint 0), yaw_deg, speed_to_next_mps
+# down_m is converted to local NED at fly time as (-COMMON_ALT_M + down_m), so the
+# JSON altitude profile is flown on top of the COMMON_ALT_M takeoff baseline.
+# Fallback (no mission file): a single straight segment along the spawn-train yaw.
 LEADER_WAYPOINTS = [
-    (0.0, 0.0, -COMMON_ALT_M, TRAIN_YAW_DEG, 5),
-    (STRAIGHT_ROUTE_N, STRAIGHT_ROUTE_E, -COMMON_ALT_M, TRAIN_YAW_DEG, 10),
+    {'north_m': 0.0, 'east_m': 0.0, 'down_m': 0.0,
+     'yaw_deg': TRAIN_YAW_DEG, 'speed_to_next_mps': None},
+    {'north_m': STRAIGHT_ROUTE_N, 'east_m': STRAIGHT_ROUTE_E, 'down_m': 0.0,
+     'yaw_deg': TRAIN_YAW_DEG, 'speed_to_next_mps': None},
 ]
+
+# Optional: fly a converted mission JSON (Mission/mission_01.json) instead of the
+# straight segment. Set LEADER_MISSION_FILE to its path. The mission's px4_ned
+# offsets are relative to the leader spawn (mission origin == leader spawn), so the
+# full 3D path (north/east/down) and yaw drop straight into the leader's local NED.
+LEADER_MISSION_FILE = os.environ.get('LEADER_MISSION_FILE', '').strip()
+
+
+# Flight helpers ported from Mission/mission_launch.py (operate on waypoint dicts).
+def wrap_degrees(angle_deg: float) -> float:
+    return (angle_deg + 180.0) % 360.0 - 180.0
+
+
+def distance_3d(start_wp: dict, end_wp: dict) -> float:
+    dn = end_wp['north_m'] - start_wp['north_m']
+    de = end_wp['east_m'] - start_wp['east_m']
+    dd = end_wp['down_m'] - start_wp['down_m']
+    return math.sqrt(dn ** 2 + de ** 2 + dd ** 2)
+
+
+def speed_for_leg(start_wp: dict, default_speed_mps: float) -> float:
+    speed = start_wp.get('speed_to_next_mps')
+    if speed is None:
+        return default_speed_mps
+    speed = float(speed)
+    if speed <= 0.0:
+        raise ValueError('speed_to_next_mps must be greater than 0.')
+    return speed
+
+
+def interpolate_waypoint(start_wp: dict, end_wp: dict, t: float) -> dict:
+    return {
+        'north_m': start_wp['north_m'] + (end_wp['north_m'] - start_wp['north_m']) * t,
+        'east_m': start_wp['east_m'] + (end_wp['east_m'] - start_wp['east_m']) * t,
+        'down_m': start_wp['down_m'] + (end_wp['down_m'] - start_wp['down_m']) * t,
+    }
+
+
+def path_yaw_deg(start_wp: dict, end_wp: dict) -> float:
+    north_delta = end_wp['north_m'] - start_wp['north_m']
+    east_delta = end_wp['east_m'] - start_wp['east_m']
+    if abs(north_delta) < 1e-6 and abs(east_delta) < 1e-6:
+        return start_wp['yaw_deg']
+    return wrap_degrees(math.degrees(math.atan2(east_delta, north_delta)))
+
+
+def select_yaw(yaw_mode: str, start_wp: dict, end_wp: dict, fallback_yaw_deg: float) -> float:
+    if yaw_mode == 'current':
+        return wrap_degrees(fallback_yaw_deg)
+    if yaw_mode == 'path':
+        return path_yaw_deg(start_wp, end_wp)
+    return wrap_degrees(start_wp['yaw_deg'])  # 'file'
+
+
+def _load_mission_waypoints(path: str):
+    with open(path, 'r', encoding='utf-8') as f:
+        mission = json.load(f)
+    items = mission.get('waypoints', [])
+    waypoints = []
+    for item in items:
+        ned = item['px4_ned']
+        waypoints.append({
+            'north_m': float(ned['north_m']),
+            'east_m': float(ned['east_m']),
+            'down_m': float(ned['down_m']),
+            'yaw_deg': float(item.get('yaw_deg', 0.0)),
+            'speed_to_next_mps': item.get('speed_to_next_mps'),
+        })
+    if len(waypoints) < 2:
+        raise ValueError(f'mission {path} needs at least 2 waypoints')
+    return waypoints
+
+
+if LEADER_MISSION_FILE:
+    LEADER_WAYPOINTS = _load_mission_waypoints(LEADER_MISSION_FILE)
+    print(f'[cv] leader route loaded from {LEADER_MISSION_FILE} '
+          f'({len(LEADER_WAYPOINTS)} waypoints, full 3D path + yaw, '
+          f'baseline alt={COMMON_ALT_M:.0f}m, yaw_mode={LEADER_YAW_MODE})')
 
 
 def _state_str(value):
@@ -219,78 +306,52 @@ def _relative_truth(follower: dict, target: dict) -> dict:
 
 # ─── Leader route ───────────────────────────────────────────────────────────
 
-# The leader's DIRECT follower is drone 1; only its link is gated. Followers 2/3
-# ride the relay chain and must never be able to stall the leader's route (that was
-# the old bug — a single follower hiccup blocked the whole 20 m route forever).
-def _direct_follower_ready(follower_status: dict) -> bool:
-    status = follower_status.get(1, {})
-    return status.get('state') == FollowerState.FOLLOW and bool(status.get('visible'))
-
-
-async def _maybe_pause_for_follower_1(leader, current, yaw, stop_event, follower_status):
-    """At most ONE short, time-capped hover if follower 1 has momentarily lost the
-    leader. Always returns so the route continues — the leader flies the full 20 m."""
-    if _direct_follower_ready(follower_status):
-        return
-    print('[leader] follower 1 not locked — short hover before continuing', flush=True)
-    deadline = asyncio.get_running_loop().time() + ROUTE_RECOVERY_PAUSE_S
-    while not stop_event.is_set() and asyncio.get_running_loop().time() < deadline:
-        await leader.go_to(current[0], current[1], current[2], yaw_deg=yaw)
-        await asyncio.sleep(ROUTE_RECOVERY_POLL_S)
-        if _direct_follower_ready(follower_status):
-            print('[leader] follower 1 recovered — resuming route', flush=True)
-            return
-    print('[leader] follower 1 still degraded — continuing route anyway', flush=True)
-
-
-async def _goto_slow(leader, start, end, yaw, stop_event, follower_status, follower_ids):
-    """Fly from start (n,e,d) to end (n,e,d) in small steps so followers keep up.
-
-    The route is unconditional: it always advances to `end` at the slow cruise rate.
-    A single bounded hover may occur per step only when the leader's direct follower
-    (drone 1) has lost lock, but the leader never waits indefinitely."""
-    n0, e0, d0 = start
-    n1, e1, d1 = end
-    dist = math.sqrt((n1 - n0) ** 2 + (e1 - e0) ** 2 + (d1 - d0) ** 2)
-    steps = max(1, int(math.ceil(dist / STEP_M)))
-    current = start
-    for k in range(1, steps + 1):
-        if stop_event.is_set():
-            return
-        await _maybe_pause_for_follower_1(leader, current, yaw, stop_event, follower_status)
-        f = k / steps
-        current = (n0 + (n1 - n0) * f, e0 + (e1 - e0) * f, d0 + (d1 - d0) * f)
-        await leader.go_to(current[0], current[1], current[2], yaw_deg=yaw)
-        await asyncio.sleep(STEP_SLEEP_S)
-
-
 async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Event,
                      acquisition_event: asyncio.Event, follower_status: dict,
                      follower_ids: list[int]):
+    """Fly the leader route. The flight logic is ported from Mission/mission_launch.py
+    (per-leg speed + interpolation at LEADER_LOOP_RATE_HZ, full 3D JSON path and yaw).
+    The LED beacon and the form-up acquisition gate are our CV logic and are kept: the
+    leader hovers at waypoint 0 on the spawn heading until the followers lock the LED
+    pair, then flies the route, then broadcasts FINISH over the LEDs before landing."""
     try:
-        # Form-up: hover at the first waypoint blinking FOLLOW so the followers can
-        # SEARCH, acquire the LED pair, lock FOLLOW, and close to formation distance
-        # BEFORE the leader starts moving (otherwise it flies out of camera range).
         first = LEADER_WAYPOINTS[0]
-        await leader.go_to(first[0], first[1], first[2], yaw_deg=first[3])
+        # Form-up: hover at waypoint 0 holding the SPAWN heading (not the JSON yaw) so
+        # the followers can SEARCH, acquire the LED pair, and close to formation
+        # distance BEFORE the leader starts moving or turning.
+        form_up_down = -COMMON_ALT_M + first['down_m']
+        await leader.go_to(first['north_m'], first['east_m'], form_up_down,
+                           yaw_deg=TRAIN_YAW_DEG)
         print(f'[leader] form-up hover {ACQUIRE_HOLD_S:.0f}s (followers acquire)')
         try:
             await asyncio.wait_for(acquisition_event.wait(), timeout=ACQUIRE_HOLD_S)
             print('[leader] acquisition gate passed — starting route')
         except asyncio.TimeoutError:
-            print('[leader] acquisition timeout — continuing straight route anyway')
+            print('[leader] acquisition timeout — continuing route anyway')
 
-        prev = first
-        for wp in LEADER_WAYPOINTS[1:]:
+        dt = 1.0 / LEADER_LOOP_RATE_HZ
+        for index in range(len(LEADER_WAYPOINTS) - 1):
             if stop_event.is_set():
                 break
-            print(f'[leader] -> N={wp[0]} E={wp[1]} D={wp[2]} yaw={wp[3]} (slow)')
-            await _goto_slow(
-                leader, prev[:3], wp[:3], wp[3], stop_event,
-                follower_status, follower_ids,
+            start_wp = LEADER_WAYPOINTS[index]
+            end_wp = LEADER_WAYPOINTS[index + 1]
+            segment_distance = distance_3d(start_wp, end_wp)
+            segment_speed = speed_for_leg(start_wp, LEADER_SPEED_MPS)
+            segment_duration = (
+                segment_distance / segment_speed if segment_speed > 0 else 0.0
             )
-            await asyncio.sleep(wp[4])
-            prev = wp
+            steps = max(1, math.ceil(segment_duration * LEADER_LOOP_RATE_HZ))
+            yaw_deg = select_yaw(LEADER_YAW_MODE, start_wp, end_wp, TRAIN_YAW_DEG)
+            print(f'[leader] leg {index}->{index + 1} | dist={segment_distance:.1f}m '
+                  f'| speed={segment_speed:.1f}m/s | yaw={yaw_deg:.1f}deg | steps={steps}',
+                  flush=True)
+            for step in range(1, steps + 1):
+                if stop_event.is_set():
+                    break
+                wp = interpolate_waypoint(start_wp, end_wp, step / steps)
+                local_down = -COMMON_ALT_M + wp['down_m']
+                await leader.go_to(wp['north_m'], wp['east_m'], local_down, yaw_deg=yaw_deg)
+                await asyncio.sleep(dt)
 
         # Tell followers to finish via the optical channel, then land.
         print('[leader] route complete — broadcasting FINISH')

@@ -63,6 +63,16 @@ if [ "$READY" -eq 0 ]; then
 fi
 sleep 3
 
+# Leader route: fly the converted mission (Mission/mission_01.json) instead of the
+# default straight 20 m segment. The leader flies the FULL 3D JSON path (real
+# altitudes + yaw) using Mission/mission_launch.py-style interpolation, after the
+# followers acquire the LED pair during the initial form-up hover.
+export LEADER_MISSION_FILE="$REPO/resources/scripts/Mission/mission_01.json"
+export WATCHDOG_S=900            # ~240 m route needs more than the 300 s default
+export LEADER_SPEED_MPS=1.0      # leader cruise (m/s); per-leg speed_to_next in JSON overrides
+export LEADER_LOOP_RATE_HZ=10.0  # setpoint interpolation rate
+export LEADER_YAW_MODE=file      # fly JSON yaw_deg (full 3D); 'path' or 'current' also valid
+
 echo "[start-cv] Launching CV end-to-end test..."
-echo "[start-cv] CV route: straight train-direction flight only; no turn pattern."
+echo "[start-cv] CV route: mission file -> $LEADER_MISSION_FILE"
 ros2 launch "$REPO/resources/scripts/cv_launch.py"
