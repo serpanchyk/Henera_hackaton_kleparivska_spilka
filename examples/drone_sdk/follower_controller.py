@@ -52,7 +52,14 @@ class FollowerControllerConfig:
     lost_frames_threshold: int = 1
     reacquire_frames: int = 3
     smoothing_alpha: float = 0.4
-    search_yaw_rate: float = 10.0
+    search_yaw_rate: float = 10.0  # legacy; superseded by the scan sweep below
+    # SEARCH scan: instead of spinning a full 360 (which re-acquires the wrong drone,
+    # e.g. our own follower), sweep a bounded window around the heading where the
+    # target was lost. Left/right is a true yaw sweep; up/down is an altitude bob
+    # (the camera is body-fixed, so vertical "look" is realized by changing height).
+    search_yaw_sweep_deg: float = 30.0       # left/right half-angle of the yaw scan
+    search_vertical_speed: float = 0.5       # m/s up/down bob amplitude (the ~45 deg look)
+    search_period_s: float = 8.0             # seconds for one full sweep cycle
     control_rate_hz: float = 10.0
     yaw_sign: float = 1.0
     vertical_sign: float = 1.0
@@ -143,6 +150,7 @@ class FollowerController:
         self._valid_frames = 0
         self._lost_frames = 0
         self._lost_since: Optional[float] = None
+        self._search_started_at: Optional[float] = None
         self._last_command = self._zero_command(FollowerState.SEARCH, MissionState.HOLD)
 
     def reset(self) -> None:
@@ -150,6 +158,7 @@ class FollowerController:
         self._valid_frames = 0
         self._lost_frames = 0
         self._lost_since = None
+        self._search_started_at = None
         self._last_command = self._zero_command(FollowerState.SEARCH, MissionState.HOLD)
 
     def update(
@@ -158,6 +167,11 @@ class FollowerController:
         current_time: Optional[float] = None,
     ) -> FollowerCommand:
         now = time.monotonic() if current_time is None else current_time
+
+        # Anchor the scan clock the moment we (re)enter SEARCH so each search starts
+        # centered on the lost heading rather than continuing a stale sweep phase.
+        if self.state != FollowerState.SEARCH:
+            self._search_started_at = None
 
         if self.state == FollowerState.FINISH:
             self._last_command = self._finish_command()
@@ -187,11 +201,11 @@ class FollowerController:
 
         valid_follow = self._is_valid_follow_observation(observation, now)
         if valid_follow:
-            return self._handle_valid_follow(observation)
+            return self._handle_valid_follow(observation, now)
 
         return self._handle_missing_or_invalid(observation, now)
 
-    def _handle_valid_follow(self, observation: VisualObservation) -> FollowerCommand:
+    def _handle_valid_follow(self, observation: VisualObservation, now: float) -> FollowerCommand:
         self._valid_frames += 1
         self._lost_frames = 0
         self._lost_since = None
@@ -203,7 +217,7 @@ class FollowerController:
                 self._last_command = self._lost_command(observation)
             else:
                 self.state = FollowerState.SEARCH
-                self._last_command = self._search_command(observation)
+                self._last_command = self._search_command(observation, now)
             return self._last_command
 
         self.state = FollowerState.FOLLOW
@@ -218,12 +232,12 @@ class FollowerController:
         self._valid_frames = 0
 
         if self.state == FollowerState.SEARCH:
-            self._last_command = self._search_command(observation)
+            self._last_command = self._search_command(observation, now)
             return self._last_command
 
         if self.state == FollowerState.HOLD:
             self.state = FollowerState.SEARCH
-            self._last_command = self._search_command(observation)
+            self._last_command = self._search_command(observation, now)
             return self._last_command
 
         if self.state == FollowerState.FOLLOW:
@@ -245,7 +259,7 @@ class FollowerController:
             return self._last_command
 
         self.state = FollowerState.SEARCH
-        self._last_command = self._search_command(observation)
+        self._last_command = self._search_command(observation, now)
         return self._last_command
 
     def _mission_state(
@@ -304,12 +318,39 @@ class FollowerController:
         )
         return self._smooth(command)
 
-    def _search_command(self, observation: Optional[VisualObservation]) -> FollowerCommand:
+    def _search_command(
+        self,
+        observation: Optional[VisualObservation],
+        now: Optional[float] = None,
+    ) -> FollowerCommand:
+        # Bounded scan instead of a full 360 spin: sweep yaw left/right within
+        # +/- search_yaw_sweep_deg and bob altitude up/down, both centered on the
+        # heading/height where the target was lost. cos() keeps yaw at its extreme
+        # rate when the scan starts (so it begins turning immediately) while sin()
+        # keeps the vertical bob at zero at the start (no jump in altitude).
+        if now is None:
+            now = time.monotonic()
+        if self._search_started_at is None:
+            self._search_started_at = now
+        tau = max(0.0, now - self._search_started_at)
+
+        omega = 2.0 * math.pi / max(0.1, self.config.search_period_s)
+        yaw_rate = (
+            self.config.yaw_sign
+            * self.config.search_yaw_sweep_deg
+            * omega
+            * math.cos(omega * tau)
+        )
+        vertical = (
+            self.config.vertical_sign
+            * self.config.search_vertical_speed
+            * math.sin(omega * tau)
+        )
         return FollowerCommand(
             forward_m_s=0.0,
             right_m_s=0.0,
-            down_m_s=0.0,
-            yaw_rate_deg_s=self._clamp(self.config.search_yaw_rate, self.config.max_yaw_rate),
+            down_m_s=self._clamp(vertical, self.config.max_vertical_speed),
+            yaw_rate_deg_s=self._clamp(yaw_rate, self.config.max_yaw_rate),
             relay_state=MissionState.HOLD,
             state=FollowerState.SEARCH,
             horizontal_angle_deg=self._finite_field(observation, 'horizontal_angle_deg'),

@@ -370,13 +370,30 @@ class ProfileAndActuatorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(responsive_first.state, FollowerState.SEARCH)
         self.assertEqual(responsive_second.state, FollowerState.FOLLOW)
 
-    def test_search_does_not_generate_vertical_command(self):
-        c = controller()
-        cmd = c.update(obs(visible=False, v=45.0), current_time=0.0)
-        self.assertEqual(cmd.state, FollowerState.SEARCH)
-        self.assertEqual(cmd.forward_m_s, 0.0)
-        self.assertEqual(cmd.right_m_s, 0.0)
-        self.assertEqual(cmd.down_m_s, 0.0)
+    def test_search_scans_yaw_and_vertical_instead_of_spinning(self):
+        c = controller(search_yaw_sweep_deg=30.0, search_vertical_speed=0.5, search_period_s=8.0)
+        start = c.update(obs(visible=False, v=45.0), current_time=0.0)
+        self.assertEqual(start.state, FollowerState.SEARCH)
+        self.assertEqual(start.forward_m_s, 0.0)
+        self.assertEqual(start.right_m_s, 0.0)
+        # Scan starts centered: yaw begins turning immediately, no vertical jump.
+        self.assertGreater(start.yaw_rate_deg_s, 0.0)
+        self.assertEqual(start.down_m_s, 0.0)
+        # A quarter period later yaw is at its sweep extreme (~0 rate) and the
+        # up/down bob is at its peak.
+        quarter = c.update(obs(visible=False), current_time=2.0)
+        self.assertAlmostEqual(quarter.yaw_rate_deg_s, 0.0, places=4)
+        self.assertGreater(quarter.down_m_s, 0.0)
+
+    def test_search_yaw_sweep_reverses_and_stays_bounded(self):
+        c = controller(search_yaw_sweep_deg=30.0, search_period_s=8.0, max_yaw_rate=40.0)
+        rates = [
+            c.update(obs(visible=False), current_time=i * 0.1).yaw_rate_deg_s
+            for i in range(81)  # one full 8 s sweep cycle
+        ]
+        self.assertGreater(max(rates), 0.0)   # turns one way...
+        self.assertLess(min(rates), 0.0)      # ...then reverses (no full 360 spin)
+        self.assertTrue(all(abs(rate) <= 40.0 for rate in rates))
 
     def test_different_start_height_is_not_randomly_compensated_in_search(self):
         c = controller()

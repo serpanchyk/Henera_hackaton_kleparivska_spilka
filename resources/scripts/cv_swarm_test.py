@@ -49,7 +49,8 @@ COMMON_ALT_M = 10.0
 EKF_SETTLE_S = 15.0
 HOVER_SETTLE_S = 8.0
 TAKEOFF_TIMEOUT_S = 35.0
-TAKEOFF_TOLERANCE_M = 0.75
+TAKEOFF_TOLERANCE_M = 1.5          # accept this far below target (SITL settles low)
+TAKEOFF_AIRBORNE_FRACTION = 0.6   # on timeout, proceed if at least this fraction of target
 CONTROL_HZ = 10.0
 BEACON_HZ = 20.0
 TRUTH_LOG_HZ = 1.0
@@ -66,9 +67,10 @@ STEP_M = 1.0               # leader route step size
 STEP_SLEEP_S = 2.5         # sleep per step -> leader cruise ~0.4 m/s while CV is noisy
 TRAIN_YAW_RAD = 3.7346
 TRAIN_YAW_DEG = math.degrees(TRAIN_YAW_RAD)
-STRAIGHT_ROUTE_M = 20.0
-STRAIGHT_ROUTE_N = STRAIGHT_ROUTE_M * math.cos(TRAIN_YAW_RAD)
-STRAIGHT_ROUTE_E = STRAIGHT_ROUTE_M * math.sin(TRAIN_YAW_RAD)
+# Multi-leg route: fly LEG_M, turn TURN_DEG, repeat NUM_LEGS times.
+LEG_M = 10.0               # length of each straight leg
+TURN_DEG = 45.0            # heading change between legs
+NUM_LEGS = 3               # 3 x 10 m = 30 m total route
 SPAWN_Z_M = 1.4
 TRAIN_SPACING_M = 4.0
 ACQUIRE_MIN_TARGET_SIZE = 45.0
@@ -85,13 +87,23 @@ for _idx in range(1, FOLLOWER_COUNT + 1):
         SPAWN_Z_M,
     )
 
-# Leader route in its OWN local NED: (north, east, down, yaw_deg, hold_s)
-# Single straight segment along the same yaw used by the spawn train. This keeps
-# the leader from turning at route start and keeps follower cameras aimed forward.
-LEADER_WAYPOINTS = [
-    (0.0, 0.0, -COMMON_ALT_M, TRAIN_YAW_DEG, 5),
-    (STRAIGHT_ROUTE_N, STRAIGHT_ROUTE_E, -COMMON_ALT_M, TRAIN_YAW_DEG, 10),
-]
+# Leader route in its OWN local NED: (north, east, down, yaw_deg, hold_s).
+# Starts along the spawn-train yaw, then turns TURN_DEG after each LEG_M leg so the
+# total path is NUM_LEGS * LEG_M long. The first entry is the form-up hover point.
+def _build_leader_waypoints():
+    waypoints = [(0.0, 0.0, -COMMON_ALT_M, TRAIN_YAW_DEG, 5)]
+    north, east = 0.0, 0.0
+    for leg in range(NUM_LEGS):
+        heading_deg = TRAIN_YAW_DEG + leg * TURN_DEG
+        heading_rad = math.radians(heading_deg)
+        north += LEG_M * math.cos(heading_rad)
+        east += LEG_M * math.sin(heading_rad)
+        hold_s = 10 if leg == NUM_LEGS - 1 else 3
+        waypoints.append((north, east, -COMMON_ALT_M, heading_deg, hold_s))
+    return waypoints
+
+
+LEADER_WAYPOINTS = _build_leader_waypoints()
 
 
 def _state_str(value):
@@ -127,9 +139,21 @@ async def _wait_until_altitude(drone: Drone, target_alt_m: float, timeout_s: flo
     while asyncio.get_running_loop().time() < deadline:
         pos = await drone.position_ned()
         last_alt = -pos.down_m
-        if abs(last_alt - target_alt_m) <= TAKEOFF_TOLERANCE_M:
+        # Accept once near the target OR comfortably above it. PX4 SITL approaches
+        # the takeoff altitude asymptotically and often settles a little low.
+        if last_alt >= target_alt_m - TAKEOFF_TOLERANCE_M:
             return last_alt
         await asyncio.sleep(0.25)
+    # Timed out: don't abort the whole mission for a drone that is clearly airborne
+    # and only slightly short — offboard will hold altitude from here. Only fail if
+    # the drone never really left the ground.
+    if last_alt >= target_alt_m * TAKEOFF_AIRBORNE_FRACTION:
+        print(
+            f'[main] WARN: drone {drone.drone_id} takeoff short '
+            f'(target={target_alt_m:.1f}m last={last_alt:.1f}m) — continuing',
+            flush=True,
+        )
+        return last_alt
     raise RuntimeError(
         f'drone {drone.drone_id} takeoff altitude timeout: '
         f'target={target_alt_m:.1f}m last={last_alt:.1f}m'
