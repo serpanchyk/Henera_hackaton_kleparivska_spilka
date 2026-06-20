@@ -506,5 +506,34 @@
       </collision>
     </link>
     </model>
+
+    <!-- Extended takeoff pad. The baked "start" mesh above is short: with the spawn
+         train compressed, the rearmost follower can land off its back edge over lower
+         terrain/water and tip ("Attitude failure (pitch)" -> arming denied). This flat
+         rigid slab spans the whole spawn line (oriented along the train yaw 3.7346 rad)
+         so every drone sits level. Tunables: <pose> z is the slab TOP minus half its
+         thickness (top ~= drone spawn z 1.4); the first <size> value is its length.
+         NOTE: re-run `bash project_setup.sh` after editing so PX4 picks up the change. -->
+    <model name="start_pad_ext">
+      <static>true</static>
+      <pose>132.4 56.3 1.13 0 0 0.5934</pose>
+      <link name="pad">
+        <visual name="pad_visual">
+          <geometry>
+            <box><size>20 6 0.5</size></box>
+          </geometry>
+          <material>
+            <ambient>0.25 0.25 0.28 1</ambient>
+            <diffuse>0.35 0.35 0.40 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <collision name="pad_collision">
+          <geometry>
+            <box><size>20 6 0.5</size></box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
   </world>
 </sdf>

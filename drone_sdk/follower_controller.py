@@ -37,7 +37,7 @@ class VisualObservation:
 
 @dataclass(frozen=True)
 class FollowerControllerConfig:
-    desired_target_size: float = 80.0
+    desired_target_size: float = 110.0
     kp_yaw: float = 1.0
     kp_forward: float = 0.02
     kp_vertical: float = 0.02

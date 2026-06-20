@@ -76,7 +76,7 @@ LEG_M = 10.0               # length of each straight leg
 TURN_DEG = 45.0            # heading change between legs
 NUM_LEGS = 3               # 3 x 10 m = 30 m total route
 SPAWN_Z_M = 1.4
-TRAIN_SPACING_M = 4.0
+TRAIN_SPACING_M = 2.5
 ACQUIRE_MIN_TARGET_SIZE = 45.0
 ACQUIRE_MAX_TARGET_SIZE = 180.0
 SPAWN_LEADER_E = 127.0
@@ -700,22 +700,70 @@ async def main():
             await d.takeoff()
 
         print(f'[main] arming and taking off to {COMMON_ALT_M:.1f}m...')
-        await asyncio.gather(*(arm_takeoff(i, d) for i, d in drones.items()))
+        # Resilient launch: a drone that fails to arm/take off (e.g. spawned tilted ->
+        # "Attitude failure (pitch)") must NOT abort the whole swarm. We drop it from the
+        # active set and the formation flies with whoever made it airborne.
+        ordered_ids = list(drones.keys())
+        arm_results = await asyncio.gather(
+            *(arm_takeoff(i, drones[i]) for i in ordered_ids),
+            return_exceptions=True,
+        )
+        active_ids = []
+        for i, result in zip(ordered_ids, arm_results):
+            if isinstance(result, Exception):
+                print(f'[main] WARN: drone {i} failed arm/takeoff — dropping from formation '
+                      f'({type(result).__name__}: {result})', flush=True)
+            else:
+                active_ids.append(i)
+
+        if 0 not in active_ids:
+            print('[main] ERROR: leader (drone 0) failed to launch — cannot run mission, '
+                  'shutting down', flush=True)
+            stop_event.set()
+            return
+
         print('[main] waiting for verified takeoff altitude...')
-        reached = await asyncio.gather(*(
-            _wait_until_altitude(d, COMMON_ALT_M, TAKEOFF_TIMEOUT_S)
-            for d in drones.values()
-        ))
-        print('[main] takeoff altitude verified: ' + ', '.join(
-            f'drone {i}={alt:.1f}m' for i, alt in zip(drones.keys(), reached)
-        ))
+        alt_results = await asyncio.gather(
+            *(_wait_until_altitude(drones[i], COMMON_ALT_M, TAKEOFF_TIMEOUT_S) for i in active_ids),
+            return_exceptions=True,
+        )
+        verified = []
+        for i, result in zip(list(active_ids), alt_results):
+            if isinstance(result, Exception):
+                print(f'[main] WARN: drone {i} never reached altitude — dropping ({result})', flush=True)
+            else:
+                verified.append(i)
+                print(f'[main] drone {i} at {result:.1f}m')
+        active_ids = verified
+        if 0 not in active_ids:
+            print('[main] ERROR: leader did not reach altitude — shutting down', flush=True)
+            stop_event.set()
+            return
         await asyncio.sleep(HOVER_SETTLE_S)
 
-        print('[main] starting offboard on all drones...')
-        await asyncio.gather(*(d.start_offboard() for d in drones.values()))
+        print(f'[main] starting offboard on active drones {active_ids}...')
+        off_results = await asyncio.gather(
+            *(drones[i].start_offboard() for i in active_ids),
+            return_exceptions=True,
+        )
+        offboard_ok = []
+        for i, result in zip(list(active_ids), off_results):
+            if isinstance(result, Exception):
+                print(f'[main] WARN: drone {i} offboard failed — dropping ({result})', flush=True)
+            else:
+                offboard_ok.append(i)
+        active_ids = offboard_ok
+        if 0 not in active_ids:
+            print('[main] ERROR: leader offboard failed — shutting down', flush=True)
+            stop_event.set()
+            return
+
+        # Only fly (and only wait to acquire) the followers that actually launched.
+        follower_ids = [fid for fid in follower_ids if fid in active_ids]
+        print(f'[main] active formation: leader + followers {follower_ids}')
 
         # Followers: cameras already started above; build the perception+control chain.
-        links = build_chain_config(FOLLOWER_COUNT)
+        links = [link for link in build_chain_config(FOLLOWER_COUNT) if link.drone_id in active_ids]
         follower_status = {}
         acquisition_event = asyncio.Event()
         follower_tasks = []

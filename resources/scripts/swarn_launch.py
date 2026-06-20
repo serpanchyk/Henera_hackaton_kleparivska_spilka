@@ -8,7 +8,7 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 LED_PLUGIN_BUILD_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), "plugins", "led_controller", "build")
 TRAIN_YAW_RAD = 3.7346
 SPAWN_Z_M = 1.4
-TRAIN_SPACING_M = 2.0
+TRAIN_SPACING_M = 1.5
 
 def leader_instanse(x, y, z, yaw=3.7346):
         cmd = f"""

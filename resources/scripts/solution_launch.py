@@ -15,7 +15,7 @@ from henera_swarm.launch_utils import (
 
 TRAIN_YAW_RAD = 3.7346
 SPAWN_Z_M = 1.4
-TRAIN_SPACING_M = 2.0
+TRAIN_SPACING_M = 1.5
 
 
 def leader_mission_process():
