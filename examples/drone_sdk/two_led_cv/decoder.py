@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-from .protocol import FINISH, FOLLOW, HOLD, SAFE, UNKNOWN, signal_on_for_state
+from .protocol import FINISH, FOLLOW, HOLD, SAFE, UNKNOWN, led_states_for_state
 
 
 @dataclass
@@ -14,7 +14,7 @@ class LedSample:
 
 
 class TwoLedCommandDecoder:
-    """Decode leader mission state from LED 4 visibility over time."""
+    """Decode leader mission state from fixed green/red LED visibility."""
 
     # Most states commit after 2 confirming windows. FINISH is terminal (it latches
     # and stops the follower), so it must clear a much higher bar to survive the
@@ -87,11 +87,17 @@ class TwoLedCommandDecoder:
         return self.current_state
 
     def debug_stats(self) -> dict[str, float | int | str]:
-        anchor_ratio, signal_on_ratio, transitions_per_s = self._window_stats()
+        green_ratio, red_ratio, transitions_per_s = self._window_stats()
         return {
             'sample_count': len(self.samples),
-            'anchor_ratio': anchor_ratio,
-            'signal_on_ratio': signal_on_ratio,
+            'anchor_ratio': green_ratio,
+            'signal_on_ratio': red_ratio,
+            'green_on_ratio': green_ratio,
+            'red_on_ratio': red_ratio,
+            'transition_count': self._count_red_transitions(),
+            'green_transition_count': self._count_green_transitions(),
+            'red_transition_count': self._count_red_transitions(),
+            'co_transition_count': self._count_co_transitions(),
             'transitions_per_s': transitions_per_s,
             'current_state': self.current_state,
             'candidate_state': self.candidate_state,
@@ -106,26 +112,27 @@ class TwoLedCommandDecoder:
         if len(self.samples) < self.min_samples:
             return UNKNOWN
 
-        anchor_ratio, signal_on_ratio, transitions_per_s = self._window_stats()
-        transition_count = self._count_transitions()
-        balanced_blink = 0.20 <= signal_on_ratio <= 0.80
-        regular_blink = self._has_regular_transitions()
-        if anchor_ratio < 0.6:
-            return UNKNOWN
+        green_ratio, red_ratio, transitions_per_s = self._window_stats()
+        green_transitions = self._count_green_transitions()
+        red_transitions = self._count_red_transitions()
+        co_transitions = self._count_co_transitions()
+        steady = green_transitions == 0 and red_transitions == 0
 
-        if signal_on_ratio > 0.85 and transitions_per_s < 1.0:
+        if green_ratio > 0.85 and red_ratio > 0.85 and steady:
             return FOLLOW
-        if signal_on_ratio < 0.15 and transitions_per_s < 1.0:
+        if green_ratio > 0.85 and red_ratio < 0.15 and steady:
+            return HOLD
+        if green_ratio < 0.15 and red_ratio > 0.85 and steady:
             return SAFE
-        if (
-            transition_count >= 3
-            and balanced_blink
-            and 3.3 <= transitions_per_s <= 7.5
-            and self._has_finish_transitions()
+        if self._has_synchronized_blink(
+            green_ratio=green_ratio,
+            red_ratio=red_ratio,
+            green_transitions=green_transitions,
+            red_transitions=red_transitions,
+            co_transitions=co_transitions,
+            transitions_per_s=transitions_per_s,
         ):
             return FINISH
-        if transition_count >= 2 and balanced_blink and regular_blink and 1.0 <= transitions_per_s <= 3.2:
-            return HOLD
         return UNKNOWN
 
     def _window_stats(self) -> tuple[float, float, float]:
@@ -133,14 +140,27 @@ class TwoLedCommandDecoder:
             return 0.0, 0.0, 0.0
 
         sample_count = len(self.samples)
-        anchor_ratio = sum(1 for sample in self.samples if sample.anchor_visible) / sample_count
-        signal_on_ratio = sum(1 for sample in self.samples if sample.signal_visible) / sample_count
-        transitions = self._count_transitions()
+        green_ratio = sum(1 for sample in self.samples if sample.anchor_visible) / sample_count
+        red_ratio = sum(1 for sample in self.samples if sample.signal_visible) / sample_count
+        transitions = self._count_co_transitions()
         duration = max(0.0, self.samples[-1].t - self.samples[0].t)
         transitions_per_s = transitions / duration if duration > 0.0 else 0.0
-        return anchor_ratio, signal_on_ratio, transitions_per_s
+        return green_ratio, red_ratio, transitions_per_s
 
-    def _count_transitions(self) -> int:
+    def _count_green_transitions(self) -> int:
+        if not self.samples:
+            return 0
+        transitions = 0
+        previous = self.samples[0].anchor_visible
+        for sample in self.samples[1:]:
+            if sample.anchor_visible != previous:
+                transitions += 1
+                previous = sample.anchor_visible
+        return transitions
+
+    def _count_red_transitions(self) -> int:
+        if not self.samples:
+            return 0
         transitions = 0
         previous = self.samples[0].signal_visible
         for sample in self.samples[1:]:
@@ -149,49 +169,46 @@ class TwoLedCommandDecoder:
                 previous = sample.signal_visible
         return transitions
 
-    def _has_regular_transitions(self) -> bool:
-        transition_times: list[float] = []
-        previous = self.samples[0].signal_visible
+    def _count_co_transitions(self) -> int:
+        if not self.samples:
+            return 0
+        transitions = 0
+        previous_green = self.samples[0].anchor_visible
+        previous_red = self.samples[0].signal_visible
         for sample in self.samples[1:]:
-            if sample.signal_visible != previous:
-                transition_times.append(sample.t)
-                previous = sample.signal_visible
+            green_changed = sample.anchor_visible != previous_green
+            red_changed = sample.signal_visible != previous_red
+            if green_changed and red_changed:
+                transitions += 1
+            previous_green = sample.anchor_visible
+            previous_red = sample.signal_visible
+        return transitions
 
-        if len(transition_times) < 2:
+    def _has_synchronized_blink(
+        self,
+        *,
+        green_ratio: float,
+        red_ratio: float,
+        green_transitions: int,
+        red_transitions: int,
+        co_transitions: int,
+        transitions_per_s: float,
+    ) -> bool:
+        balanced = 0.20 <= green_ratio <= 0.80 and 0.20 <= red_ratio <= 0.80
+        if not balanced:
             return False
-
-        intervals = [
-            transition_times[index] - transition_times[index - 1]
-            for index in range(1, len(transition_times))
-        ]
-        average_interval = sum(intervals) / len(intervals)
-        if average_interval <= 0.0:
+        if green_transitions < 2 or red_transitions < 2 or co_transitions < 2:
             return False
-
-        max_deviation = max(abs(interval - average_interval) for interval in intervals)
-        return max_deviation <= max(0.03, average_interval * 0.25)
-
-    def _has_finish_transitions(self) -> bool:
-        transition_times: list[float] = []
-        previous = self.samples[0].signal_visible
-        for sample in self.samples[1:]:
-            if sample.signal_visible != previous:
-                transition_times.append(sample.t)
-                previous = sample.signal_visible
-
-        if len(transition_times) < 4:
+        if green_transitions != red_transitions or co_transitions != green_transitions:
             return False
-
-        intervals = [
-            transition_times[index] - transition_times[index - 1]
-            for index in range(1, len(transition_times))
-        ]
-        average_interval = sum(intervals) / len(intervals)
-        if not 0.12 <= average_interval <= 0.35:
+        if not 0.8 <= transitions_per_s <= 3.2:
             return False
+        same_phase_ratio = sum(
+            1 for sample in self.samples
+            if sample.anchor_visible == sample.signal_visible
+        ) / len(self.samples)
+        return same_phase_ratio >= 0.85
 
-        max_deviation = max(abs(interval - average_interval) for interval in intervals)
-        return max_deviation <= max(0.08, average_interval * 0.45)
 
 
 def demo_generated_timestamps() -> list[tuple[float, str, str]]:
@@ -204,11 +221,8 @@ def demo_generated_timestamps() -> list[tuple[float, str, str]]:
     for state in [FOLLOW, SAFE, HOLD, FINISH]:
         segment_end = t + 2.0
         while t < segment_end:
-            decoded = decoder.update(
-                anchor_visible=True,
-                signal_visible=signal_on_for_state(state, t),
-                now=t,
-            )
+            green_on, red_on = led_states_for_state(state, t)
+            decoded = decoder.update(anchor_visible=green_on, signal_visible=red_on, now=t)
             rows.append((round(t, 2), state, decoded))
             t += step_s
     return rows

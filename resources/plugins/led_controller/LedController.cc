@@ -63,9 +63,9 @@ void LedController::Configure(
         }
         gzmsg << foundLenses[i].first;
         if (i == 0) {
-            gzmsg << "=mask[0]/green anchor";
+            gzmsg << "=mask[0]/green";
         } else if (i == 1) {
-            gzmsg << "=mask[1]/red signal";
+            gzmsg << "=mask[1]/red";
         }
     }
     gzmsg << std::endl;
@@ -112,17 +112,22 @@ void LedController::PreUpdate(
     gz::math::Color redColor(1.0f, 0.0f, 0.0f, 1.0f);
     gz::math::Color offColor(0.0f, 0.0f, 0.0f, 0.0f);
 
-    // --- NEW BINARY MASK PARSER LOGIC ---
-    if (cmd.length() == 4 && (cmd[0] == '1' || cmd[0] == '0'))
+    const bool isBinaryMask = cmd.length() == 4
+        && std::all_of(cmd.begin(), cmd.end(), [](char c) { return c == '0' || c == '1'; });
+
+    if (isBinaryMask)
     {
-        // Parse individual states based on the binary mask string positions.
-        // Lenses are sorted by name: index 0 = led_lens_01 (anchor, GREEN),
-        // index 1 = led_lens_04 (signal, RED). Distinct colours let the CV
-        // pipeline tell anchor from signal even when they overlap.
-        for (size_t i = 0; i < this->ledVisualEntities.size() && i < 4; ++i)
+        // Lenses are sorted by name. The two-LED protocol uses fixed colors:
+        // index 0 = led_lens_01 (GREEN), index 1 = led_lens_04 (RED).
+        // Mask positions 3/4 are compatibility padding and are ignored.
+        for (size_t i = 0; i < this->ledVisualEntities.size(); ++i)
         {
-            gz::math::Color onColor = (i == 1) ? redColor : greenColor;
-            gz::math::Color targetedColor = (cmd[i] == '1') ? onColor : offColor;
+            gz::math::Color targetedColor = offColor;
+            if (i == 0 && cmd[0] == '1') {
+                targetedColor = greenColor;
+            } else if (i == 1 && cmd[1] == '1') {
+                targetedColor = redColor;
+            }
             this->UpdateVisualState(this->ledVisualEntities[i], targetedColor, _ecm);
         }
     }
@@ -143,9 +148,16 @@ void LedController::PreUpdate(
 
         if (shouldUpdateLenses || cmd == "ON" || cmd == "OFF") 
         {
-            gz::math::Color targetedColor = (cmd == "ON") ? greenColor : offColor;
-            for (const auto &visEntity : this->ledVisualEntities) {
-                this->UpdateVisualState(visEntity, targetedColor, _ecm);
+            for (size_t i = 0; i < this->ledVisualEntities.size(); ++i) {
+                gz::math::Color targetedColor = offColor;
+                if (cmd == "ON") {
+                    if (i == 0) {
+                        targetedColor = greenColor;
+                    } else if (i == 1) {
+                        targetedColor = redColor;
+                    }
+                }
+                this->UpdateVisualState(this->ledVisualEntities[i], targetedColor, _ecm);
             }
         }
     }

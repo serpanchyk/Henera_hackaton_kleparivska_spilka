@@ -33,7 +33,7 @@ FOLLOW = protocol.FOLLOW
 HOLD = protocol.HOLD
 SAFE = protocol.SAFE
 UNKNOWN = protocol.UNKNOWN
-signal_on_for_state = protocol.signal_on_for_state
+led_states_for_state = protocol.led_states_for_state
 
 TwoLedCommandDecoder = decoder_module.TwoLedCommandDecoder
 demo_generated_timestamps = decoder_module.demo_generated_timestamps
@@ -90,18 +90,19 @@ class TwoLedCommandDecoderTests(unittest.TestCase):
         t, decoded = self.feed_state(decoder, FOLLOW, 0.0, duration_s=1.5)
         self.assertEqual(decoded, FOLLOW)
 
-        jittered_samples = [
-            (0.00, True), (0.09, True), (0.21, False), (0.29, False),
-            (0.43, True), (0.51, True), (0.62, False), (0.74, False),
-            (0.85, True), (0.96, True), (1.05, False), (1.17, False),
-        ]
-        for base in (0.0, 1.2):
-            for offset, signal_visible in jittered_samples:
-                decoded = decoder.update(
-                    anchor_visible=True,
-                    signal_visible=signal_visible,
-                    now=t + base + offset,
-                )
+        transition_times = [0.52, 1.03, 1.57, 2.06, 2.54, 3.08, 3.55, 4.04]
+        transition_index = 0
+        both_visible = True
+        for index in range(45):
+            offset = index * 0.1
+            while transition_index < len(transition_times) and offset >= transition_times[transition_index]:
+                both_visible = not both_visible
+                transition_index += 1
+            decoded = decoder.update(
+                anchor_visible=both_visible,
+                signal_visible=both_visible,
+                now=t + offset,
+            )
 
         self.assertEqual(decoded, FINISH)
 
@@ -128,13 +129,15 @@ class TwoLedCommandDecoderTests(unittest.TestCase):
         self.assertEqual(stats['current_state'], HOLD)
         self.assertEqual(stats['candidate_state'], HOLD)
         self.assertAlmostEqual(stats['anchor_ratio'], 1.0)
-        self.assertGreater(stats['transitions_per_s'], 1.0)
+        self.assertAlmostEqual(stats['red_on_ratio'], 0.0)
+        self.assertEqual(stats['green_transition_count'], 0)
+        self.assertEqual(stats['red_transition_count'], 0)
 
     def test_relayed_follow_with_single_frame_dropouts_stays_follow(self):
         # Regression: a relayed FOLLOW link drops the signal LED for one frame here
         # and there (detection noise at ~4 m). With the decoder fed already-debounced
-        # input this is just steady FOLLOW; raw 1-frame dropouts must never be read as
-        # a fast blink that crosses the FINISH band (the bug that killed followers 2/3).
+        # input this is just steady FOLLOW; raw 1-frame red dropouts must never be read as
+        # synchronized green+red FINISH blinking.
         decoder = TwoLedCommandDecoder(window_s=1.0, min_samples=8)
         t, decoded = self.feed_state(decoder, FOLLOW, 0.0, duration_s=1.5)
         self.assertEqual(decoded, FOLLOW)
@@ -149,7 +152,7 @@ class TwoLedCommandDecoderTests(unittest.TestCase):
         self.assertNotEqual(decoder.debug_stats()['current_state'], FINISH)
 
     def test_finish_requires_sustained_confirmation_before_committing(self):
-        # A real leader FINISH (clean 0.2 s toggle) still commits, but only after the
+        # A real leader FINISH (both LEDs toggle together) still commits, but only after the
         # raised confirmation threshold — a brief noisy burst must not flip to FINISH.
         decoder = TwoLedCommandDecoder(window_s=1.0, min_samples=8)
         t, decoded = self.feed_state(decoder, FOLLOW, 0.0, duration_s=1.5)
@@ -157,6 +160,20 @@ class TwoLedCommandDecoderTests(unittest.TestCase):
 
         _, decoded = self.feed_state(decoder, FINISH, t, duration_s=3.0)
         self.assertEqual(decoded, FINISH)
+
+    def test_out_of_phase_blink_is_not_finish(self):
+        decoder = TwoLedCommandDecoder(window_s=1.0, min_samples=8)
+        t, decoded = self.feed_state(decoder, FOLLOW, 0.0, duration_s=1.5)
+        self.assertEqual(decoded, FOLLOW)
+
+        for index in range(60):
+            green_on = (index // 10) % 2 == 0
+            red_on = not green_on
+            decoded = decoder.update(anchor_visible=green_on, signal_visible=red_on, now=t)
+            t += 0.05
+
+        self.assertNotEqual(decoded, FINISH)
+        self.assertNotEqual(decoder.debug_stats()['current_state'], FINISH)
 
     def test_demo_generated_timestamps_runs_all_required_segments(self):
         rows = demo_generated_timestamps()
@@ -170,9 +187,10 @@ class TwoLedCommandDecoderTests(unittest.TestCase):
         decoded = UNKNOWN
         end_t = start_t + duration_s
         while t < end_t:
+            green_on, red_on = led_states_for_state(state, t - start_t)
             decoded = decoder.update(
-                anchor_visible=True,
-                signal_visible=signal_on_for_state(state, t - start_t),
+                anchor_visible=green_on,
+                signal_visible=red_on,
                 now=t,
             )
             t += step_s

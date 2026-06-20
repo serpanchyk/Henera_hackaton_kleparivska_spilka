@@ -3,7 +3,7 @@
 Final end-to-end CV test (legal Path B): real optical channel, no ground truth.
 
 Single process owns all 4 MAVSDK connections. The leader (drone 0) flies a
-defined route AND blinks the two-LED optical protocol. Each follower (1,2,3)
+defined route AND publishes the two-LED optical protocol. Each follower (1,2,3)
 runs the real perception+control chain from its OWN camera:
 
     camera -> GreenLedDetector -> decoder -> tracker -> adapter
@@ -13,7 +13,7 @@ Chain: follower 1 tracks leader, 2 tracks 1, 3 tracks 2.
 
 PREREQUISITE: run `bash project_setup.sh` so the 2-lens model is in PX4 (leader
 shows exactly led_lens_01 + led_lens_04). Otherwise the detector sees the old
-4-green model and cannot decode the blink.
+4-green model and cannot decode the protocol.
 
 Run via resources/scripts/cv_launch.py (sim + this), or standalone after sim is up.
 """
@@ -23,7 +23,11 @@ import os
 import signal
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+_REPO_ROOT = os.path.join(os.path.dirname(__file__), '..', '..')
+# drone_sdk now lives under examples/ (camera-frame-dedup merge), so put that on the
+# path too — keep the repo root as a fallback for older layouts.
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, 'examples'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import rclpy
@@ -38,7 +42,7 @@ from drone_sdk.follower_controller import (
     VisualObservation,
     build_chain_config,
 )
-from drone_sdk.two_led_cv import signal_on_for_state
+from drone_sdk.two_led_cv import mask_for_state
 from cv_vision_provider import CVVisionProvider
 from results_logger import ResultsLogger
 
@@ -49,7 +53,8 @@ COMMON_ALT_M = 10.0
 EKF_SETTLE_S = 15.0
 HOVER_SETTLE_S = 8.0
 TAKEOFF_TIMEOUT_S = 35.0
-TAKEOFF_TOLERANCE_M = 0.75
+TAKEOFF_TOLERANCE_M = 1.5          # accept this far below target (SITL settles low)
+TAKEOFF_AIRBORNE_FRACTION = 0.6   # on timeout, proceed if at least this fraction of target
 CONTROL_HZ = 10.0
 BEACON_HZ = 20.0
 TRUTH_LOG_HZ = 1.0
@@ -66,9 +71,10 @@ STEP_M = 1.0               # leader route step size
 STEP_SLEEP_S = 2.5         # sleep per step -> leader cruise ~0.4 m/s while CV is noisy
 TRAIN_YAW_RAD = 3.7346
 TRAIN_YAW_DEG = math.degrees(TRAIN_YAW_RAD)
-STRAIGHT_ROUTE_M = 20.0
-STRAIGHT_ROUTE_N = STRAIGHT_ROUTE_M * math.cos(TRAIN_YAW_RAD)
-STRAIGHT_ROUTE_E = STRAIGHT_ROUTE_M * math.sin(TRAIN_YAW_RAD)
+# Multi-leg route: fly LEG_M, turn TURN_DEG, repeat NUM_LEGS times.
+LEG_M = 10.0               # length of each straight leg
+TURN_DEG = 45.0            # heading change between legs
+NUM_LEGS = 3               # 3 x 10 m = 30 m total route
 SPAWN_Z_M = 1.4
 TRAIN_SPACING_M = 4.0
 ACQUIRE_MIN_TARGET_SIZE = 45.0
@@ -85,13 +91,23 @@ for _idx in range(1, FOLLOWER_COUNT + 1):
         SPAWN_Z_M,
     )
 
-# Leader route in its OWN local NED: (north, east, down, yaw_deg, hold_s)
-# Single straight segment along the same yaw used by the spawn train. This keeps
-# the leader from turning at route start and keeps follower cameras aimed forward.
-LEADER_WAYPOINTS = [
-    (0.0, 0.0, -COMMON_ALT_M, TRAIN_YAW_DEG, 5),
-    (STRAIGHT_ROUTE_N, STRAIGHT_ROUTE_E, -COMMON_ALT_M, TRAIN_YAW_DEG, 10),
-]
+# Leader route in its OWN local NED: (north, east, down, yaw_deg, hold_s).
+# Starts along the spawn-train yaw, then turns TURN_DEG after each LEG_M leg so the
+# total path is NUM_LEGS * LEG_M long. The first entry is the form-up hover point.
+def _build_leader_waypoints():
+    waypoints = [(0.0, 0.0, -COMMON_ALT_M, TRAIN_YAW_DEG, 5)]
+    north, east = 0.0, 0.0
+    for leg in range(NUM_LEGS):
+        heading_deg = TRAIN_YAW_DEG + leg * TURN_DEG
+        heading_rad = math.radians(heading_deg)
+        north += LEG_M * math.cos(heading_rad)
+        east += LEG_M * math.sin(heading_rad)
+        hold_s = 10 if leg == NUM_LEGS - 1 else 3
+        waypoints.append((north, east, -COMMON_ALT_M, heading_deg, hold_s))
+    return waypoints
+
+
+LEADER_WAYPOINTS = _build_leader_waypoints()
 
 
 def _state_str(value):
@@ -99,10 +115,8 @@ def _state_str(value):
 
 
 def leader_mask(state: str, t: float) -> str:
-    """2-lens mask: index 0 = led_lens_01 (anchor, always on),
-    index 1 = led_lens_04 (signal, per protocol timing). Positions 3/4 unused."""
-    signal_on = signal_on_for_state(state, t)
-    return f"1{'1' if signal_on else '0'}00"
+    """2-lens mask: bit 1 = led_lens_01 green, bit 2 = led_lens_04 red."""
+    return mask_for_state(state, t)
 
 
 # ─── Leader LED beacon ───────────────────────────────────────────────────────
@@ -127,9 +141,21 @@ async def _wait_until_altitude(drone: Drone, target_alt_m: float, timeout_s: flo
     while asyncio.get_running_loop().time() < deadline:
         pos = await drone.position_ned()
         last_alt = -pos.down_m
-        if abs(last_alt - target_alt_m) <= TAKEOFF_TOLERANCE_M:
+        # Accept once near the target OR comfortably above it. PX4 SITL approaches
+        # the takeoff altitude asymptotically and often settles a little low.
+        if last_alt >= target_alt_m - TAKEOFF_TOLERANCE_M:
             return last_alt
         await asyncio.sleep(0.25)
+    # Timed out: don't abort the whole mission for a drone that is clearly airborne
+    # and only slightly short — offboard will hold altitude from here. Only fail if
+    # the drone never really left the ground.
+    if last_alt >= target_alt_m * TAKEOFF_AIRBORNE_FRACTION:
+        print(
+            f'[main] WARN: drone {drone.drone_id} takeoff short '
+            f'(target={target_alt_m:.1f}m last={last_alt:.1f}m) — continuing',
+            flush=True,
+        )
+        return last_alt
     raise RuntimeError(
         f'drone {drone.drone_id} takeoff altitude timeout: '
         f'target={target_alt_m:.1f}m last={last_alt:.1f}m'
@@ -268,7 +294,7 @@ async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Even
                      acquisition_event: asyncio.Event, follower_status: dict,
                      follower_ids: list[int]):
     try:
-        # Form-up: hover at the first waypoint blinking FOLLOW so the followers can
+        # Form-up: hover at the first waypoint publishing FOLLOW so the followers can
         # SEARCH, acquire the LED pair, lock FOLLOW, and close to formation distance
         # BEFORE the leader starts moving (otherwise it flies out of camera range).
         first = LEADER_WAYPOINTS[0]

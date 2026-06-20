@@ -34,8 +34,13 @@ _ensure_pkg(f'{PKG}.two_led_cv', ROOT / 'drone_sdk' / 'two_led_cv')
 fc = _load(f'{PKG}.follower_controller', ROOT / 'drone_sdk' / 'follower_controller.py')
 adapter = _load(f'{PKG}.two_led_cv.adapter', ROOT / 'drone_sdk' / 'two_led_cv' / 'adapter.py')
 
-two_led_to_visual = adapter.two_led_to_visual
+_two_led_to_visual = adapter.two_led_to_visual
 VisualObservation = fc.VisualObservation
+
+
+def two_led_to_visual(*args, **kwargs):
+    kwargs.setdefault('timestamp', 123.456)
+    return _two_led_to_visual(*args, **kwargs)
 
 
 def obs(visible=True, x=0.0, y=0.0, rng=3.0, state='FOLLOW'):
@@ -104,8 +109,9 @@ class AdapterTests(unittest.TestCase):
         self.assertTrue(v.target_visible)
         self.assertAlmostEqual(v.target_size, 80.0, places=6)
 
-    def test_timestamp_is_set(self):
-        self.assertGreater(two_led_to_visual(obs()).timestamp, 0.0)
+    def test_timestamp_is_preserved(self):
+        visual = _two_led_to_visual(obs(), timestamp=17.25)
+        self.assertEqual(visual.timestamp, 17.25)
 
 
 if __name__ == '__main__':

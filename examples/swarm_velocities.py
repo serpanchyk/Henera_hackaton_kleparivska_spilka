@@ -57,17 +57,13 @@ def camera_loop(drones: list, shutdown: threading.Event):
 
 
 async def led_pattern(drone: Drone, shutdown: asyncio.Event):
-    masks = ['1000', '1100']
+    masks = ['1100', '1000', '0100', '0000']
     while not shutdown.is_set():
         for mask in masks:
             if shutdown.is_set():
                 return
             drone.set_leds(mask)
             await asyncio.sleep(1.0)
-        if shutdown.is_set():
-            return
-        drone.led_blink()
-        await asyncio.sleep(2.0)
 
 
 async def drone_mission(drone: Drone, drone_id: int,
