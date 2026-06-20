@@ -19,6 +19,9 @@ TRAIN_SPACING_M = 4.0
 
 
 def px4_instance(instance_id, x, y, z, yaw=3.7346):
+    # PX4_GZ_STANDALONE=1: attach to the Gazebo server that start_cv.sh already
+    # pre-started instead of letting each PX4 instance spawn its OWN server. Two
+    # competing servers got one SIGKILLed and left the bridges timing out on /clock.
     cmd = f"""
         export DISPLAY=:0
         export MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA
@@ -27,6 +30,7 @@ def px4_instance(instance_id, x, y, z, yaw=3.7346):
         PX4_SYS_AUTOSTART=4010 \
         PX4_SIM_MODEL=gz_x500_mono_cam \
         PX4_GZ_WORLD=baylands_custom \
+        PX4_GZ_STANDALONE=1 \
         PX4_GZ_MODEL_POSE="{x},{y},{z},0,0,{yaw}" \
         ./build/px4_sitl_default/bin/px4 -i {instance_id}
         """
@@ -52,7 +56,7 @@ def generate_launch_description():
     behind_dx = -TRAIN_SPACING_M * math.cos(TRAIN_YAW_RAD)
     behind_dy = -TRAIN_SPACING_M * math.sin(TRAIN_YAW_RAD)
 
-    # t=0s: drone 0 (leader) — starts Gazebo
+    # t=0s: drone 0 (leader) — attaches to the Gazebo server pre-started by start_cv.sh
     actions.append(px4_instance(0, leader_x, leader_y, SPAWN_Z_M, TRAIN_YAW_RAD))
 
     # t=5s: drones 1,2,3 — attach to running Gazebo
