@@ -151,7 +151,14 @@ Supported command forms in the current Gazebo plugin:
 - `OFF`;
 - `BLINK`.
 
-For the current two-lens model, mask bit 1 controls `led_lens_01` as the green anchor and mask bit 2 controls `led_lens_04` as the red signal. Bits 3 and 4 are unused. Use `1100` for green anchor plus red signal, and `1000` for green anchor only.
+For the current two-lens model, mask bit 1 controls `led_lens_01` as the fixed green LED and mask bit 2 controls `led_lens_04` as the fixed red LED. Bits 3 and 4 are unused compatibility padding.
+
+Protocol masks:
+
+- `FOLLOW`: green + red ON, `1100`.
+- `HOLD`: green ON only, `1000`.
+- `SAFE`: red ON only, `0100`.
+- `FINISH`: green + red blink together in phase, alternating `1100` and `0000` at about 1 Hz.
 
 ## Camera
 
@@ -195,4 +202,3 @@ Exported exception classes:
 - `LEDError`
 
 The current SDK actively raises `ConnectionError`, `TimeoutError`, and `MAVSDKError`. Other classes are available for consistent caller-side handling.
-

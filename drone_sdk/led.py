@@ -9,8 +9,8 @@ GZ_CMD = 'gz'
 
 
 def set_led_mask(drone_id: int, mask: str) -> None:
-    if not isinstance(mask, str) or not all(c in '01' for c in mask):
-        raise LEDError(f'Invalid LED mask: {mask!r}, expected binary string (e.g. "1010")')
+    if not isinstance(mask, str) or len(mask) != 4 or not all(c in '01' for c in mask):
+        raise LEDError(f'Invalid LED mask: {mask!r}, expected 4-character binary string (e.g. "1100")')
     _publish(drone_id, mask)
 
 

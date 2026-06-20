@@ -22,7 +22,7 @@ class TwoLedTracker:
     When blobs do not carry distinct color identity, the anchor is chosen
     deterministically as the leftmost blob, with topmost as a tie-breaker. The
     resulting vector is an image-only convention used for stable fallback when
-    the signal LED blinks OFF.
+    only one LED is visible.
     """
 
     def __init__(

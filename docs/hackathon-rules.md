@@ -69,10 +69,17 @@ Suggested baseline:
 
 - one LED group on the leader;
 - visible camera-based detection from followers;
-- limited colors/channels and blink frequencies;
+- limited colors/channels and simple blink patterns;
 - no unlimited auxiliary markers that turn the task into direct localization.
 
-This repository currently models two LED lenses per drone. The Gazebo plugin still accepts four-character binary masks for SDK compatibility: bit 1 controls the green anchor lens, bit 2 controls the red signal lens, and bits 3-4 are unused by the current model. It also accepts `ON`, `OFF`, and `BLINK` legacy commands.
+This repository currently models two fixed-color LED lenses per drone. The Gazebo plugin still accepts four-character binary masks for SDK compatibility: bit 1 controls `led_lens_01` as the green LED, bit 2 controls `led_lens_04` as the red LED, and bits 3-4 are unused by the current model. It also accepts `ON`, `OFF`, and `BLINK` legacy commands.
+
+Protocol masks:
+
+- `FOLLOW`: green + red ON, `1100`.
+- `HOLD`: green ON only, `1000`.
+- `SAFE`: red ON only, `0100`.
+- `FINISH`: green + red blink together in phase, alternating `1100` and `0000` at about 1 Hz.
 
 ## Minimum Protocol Requirements
 
@@ -115,4 +122,3 @@ Recommended timing:
 - Protocol: 3 minutes.
 - Results: 3 minutes.
 - Q&A: 2 minutes.
-
