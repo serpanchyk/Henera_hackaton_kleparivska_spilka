@@ -159,20 +159,34 @@ async def _wait_until_altitude(drone: Drone, target_alt_m: float, timeout_s: flo
     )
 
 
-def _force_search_when_invisible(obs: VisualObservation) -> VisualObservation:
-    if obs.target_visible:
-        return obs
+def _navigation_observation(obs: VisualObservation) -> VisualObservation:
     mission = _state_str(obs.mission_state).upper()
-    if mission in ('FOLLOW', 'FINISH'):
+    if mission in ('FOLLOW', 'SAFE', 'FINISH'):
         return obs
     return VisualObservation(
-        target_visible=False,
+        target_visible=obs.target_visible,
         horizontal_angle_deg=obs.horizontal_angle_deg,
         vertical_angle_deg=obs.vertical_angle_deg,
         target_size=obs.target_size,
         mission_state=MissionState.FOLLOW,
         timestamp=obs.timestamp,
     )
+
+
+def _relay_ready(raw_obs: VisualObservation, command) -> bool:
+    return (
+        raw_obs.target_visible
+        and _state_str(raw_obs.mission_state).upper() == 'FOLLOW'
+        and command.state == FollowerState.FOLLOW
+    )
+
+
+def _beacon_state(raw_obs: VisualObservation, command) -> str:
+    if command.relay_state == MissionState.FINISH:
+        return _state_str(MissionState.FINISH)
+    if command.relay_state == MissionState.SAFE:
+        return _state_str(MissionState.SAFE)
+    return _state_str(MissionState.FOLLOW if _relay_ready(raw_obs, command) else MissionState.HOLD)
 
 
 def _round_or_none(value, digits: int):
@@ -334,12 +348,14 @@ def _chain_acquired(follower_status: dict, follower_ids: list[int]) -> bool:
         return all(
             follower_status.get(fid, {}).get('state') == FollowerState.FOLLOW
             and follower_status.get(fid, {}).get('visible')
+            and follower_status.get(fid, {}).get('relay_ready')
             and _target_size_ready(follower_status.get(fid, {}).get('size'))
             for fid in follower_ids
         )
     return (
         follower_status.get(1, {}).get('state') == FollowerState.FOLLOW
         and follower_status.get(1, {}).get('visible')
+        and follower_status.get(1, {}).get('relay_ready')
         and _target_size_ready(follower_status.get(1, {}).get('size'))
     )
 
@@ -367,9 +383,10 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
         while not stop_event.is_set():
             raw_obs = await provider.observe()
             vision_debug = getattr(provider, 'last_debug', {})
-            obs = _force_search_when_invisible(raw_obs)
+            obs = _navigation_observation(raw_obs)
             cmd = controller.update(obs)
-            beacon_state[0] = _state_str(cmd.relay_state)
+            relay_ready = _relay_ready(raw_obs, cmd)
+            beacon_state[0] = _beacon_state(raw_obs, cmd)
             await actuator.apply(cmd)
             tick += 1
             if obs.target_visible:
@@ -381,6 +398,7 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
                 'mission': obs.mission_state,
                 'visible': obs.target_visible,
                 'size': obs.target_size,
+                'relay_ready': relay_ready,
             }
             current_state = _state_str(cmd.state)
             current_visible = obs.target_visible
@@ -393,7 +411,7 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
                 print(
                     f'[follower {drone_id}] transition '
                     f'state={current_state} mission={current_mission} '
-                    f'raw={_state_str(raw_obs.mission_state)} relay={_state_str(cmd.relay_state)} '
+                    f'raw={_state_str(raw_obs.mission_state)} relay={beacon_state[0]} '
                     f'vis={current_visible} anchor={vision_debug.get("anchor_visible")} '
                     f'signal={vision_debug.get("signal_visible")} '
                     f'sig_ratio={_fmt(vision_debug.get("signal_on_ratio"), 2)} '
@@ -418,7 +436,7 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
                 altitude_m = await _altitude_or_none(actuator.drone)
                 print(f'[follower {drone_id}] state={_state_str(cmd.state)} '
                       f'mission={_state_str(obs.mission_state)} raw={_state_str(raw_obs.mission_state)} '
-                      f'relay={_state_str(cmd.relay_state)} vis={obs.target_visible} '
+                      f'relay={beacon_state[0]} vis={obs.target_visible} '
                       f'anchor={vision_debug.get("anchor_visible")} '
                       f'signal={vision_debug.get("signal_visible")} '
                       f'sig_ratio={_fmt(vision_debug.get("signal_on_ratio"), 2)} '
@@ -439,7 +457,8 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
                 'state': _state_str(cmd.state),
                 'mission': _state_str(obs.mission_state),
                 'raw_mission': _state_str(raw_obs.mission_state),
-                'relay': _state_str(cmd.relay_state),
+                'relay': beacon_state[0],
+                'relay_ready': relay_ready,
                 'visible': obs.target_visible,
                 'raw_visible': raw_obs.target_visible,
                 'anchor_visible': vision_debug.get('anchor_visible'),
@@ -636,6 +655,7 @@ async def main():
                     search_yaw_rate=20.0,
                     kp_forward=0.05,
                     max_forward_speed=1.5,
+                    reacquire_frames=1,
                     lost_timeout=1.0,
                     lost_command_memory_s=0.8,
                 ),

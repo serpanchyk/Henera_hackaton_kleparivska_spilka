@@ -15,7 +15,10 @@ HFOV_RAD = 1.6
 LED_BASELINE_M = 0.1077
 GREEN_RANGES = [((40, 60, 60), (90, 255, 255))]
 RED_RANGES = [((0, 70, 70), (14, 255, 255)), ((166, 70, 70), (180, 255, 255))]
-_RED_MIN_AREA = 3.0
+_MIN_LED_AREA = 1.5
+_RED_MIN_AREA = 1.5
+_MIN_PAIR_RANGE_M = 0.3
+_MAX_PAIR_RANGE_M = 30.0
 _VISIBILITY_DEBOUNCE_FRAMES = 2
 _KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
 
@@ -71,6 +74,24 @@ def _detect_color(hsv, ranges, min_area=3.0, max_area=4000.0):
         if best is None or candidate[2] > best[2]:
             best = candidate
     return best
+
+
+def _estimated_pair_range_m(anchor, signal, width: int, hfov_rad: float) -> Optional[float]:
+    if anchor is None or signal is None:
+        return None
+    distance_px = math.hypot(signal[0] - anchor[0], signal[1] - anchor[1])
+    if distance_px <= 0.0:
+        return None
+    focal_px = (width * 0.5) / math.tan(hfov_rad * 0.5)
+    return LED_BASELINE_M * focal_px / distance_px
+
+
+def _valid_led_pair(anchor, signal, width: int, hfov_rad: float) -> bool:
+    estimated_range = _estimated_pair_range_m(anchor, signal, width, hfov_rad)
+    return (
+        estimated_range is not None
+        and _MIN_PAIR_RANGE_M <= estimated_range <= _MAX_PAIR_RANGE_M
+    )
 
 
 class CVVisionProvider:
@@ -150,8 +171,12 @@ class CVVisionProvider:
         frame = packet.image
         height, width = frame.shape[:2]
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        anchor = _detect_color(hsv, GREEN_RANGES)
+        anchor = _detect_color(hsv, GREEN_RANGES, min_area=_MIN_LED_AREA)
         signal = _detect_color(hsv, RED_RANGES, min_area=_RED_MIN_AREA)
+        if anchor is not None and signal is not None and not _valid_led_pair(
+            anchor, signal, width, self.hfov_rad
+        ):
+            signal = None
 
         anchor_visible = self._anchor_debounce.update(anchor is not None)
         signal_visible = self._signal_debounce.update(signal is not None)
