@@ -18,6 +18,7 @@ shows exactly led_lens_01 + led_lens_04). Otherwise the detector sees the old
 Run via resources/scripts/cv_launch.py (sim + this), or standalone after sim is up.
 """
 import asyncio
+import json
 import math
 import os
 import signal
@@ -55,7 +56,9 @@ TAKEOFF_AIRBORNE_FRACTION = 0.6   # on timeout, proceed if at least this fractio
 CONTROL_HZ = 10.0
 BEACON_HZ = 20.0
 TRUTH_LOG_HZ = 1.0
-WATCHDOG_S = 300.0
+# Time cap. Overridable via env because a long converted mission route (e.g.
+# ~240 m) takes far longer than the default short turn pattern.
+WATCHDOG_S = float(os.environ.get('WATCHDOG_S', '300'))
 FINISH_BROADCAST_S = 15.0  # how long the leader blinks FINISH before landing
 FINISH_DESCENT_SPEED_MS = 0.6   # follower descent rate after a confirmed FINISH
 FINISH_DESCENT_TIMEOUT_S = 25.0 # cap on the descent before the follower task exits
@@ -104,7 +107,77 @@ def _build_leader_waypoints():
     return waypoints
 
 
-LEADER_WAYPOINTS = _build_leader_waypoints()
+# Optional: fly a converted mission JSON (e.g. Mission/mission_01.json) instead of
+# the built-in turn pattern. Point LEADER_MISSION_FILE at its path (start_cv.sh
+# exports it) to switch missions without editing this file. The mission's px4_ned
+# offsets are relative to the leader spawn (mission origin == leader spawn), so the
+# full path drops straight into the leader's local NED, flown on top of the
+# COMMON_ALT_M takeoff baseline. LEADER_YAW_MODE picks the heading source:
+#   file    = JSON yaw_deg (default)   path = face each leg   current = spawn yaw
+LEADER_MISSION_FILE = os.environ.get('LEADER_MISSION_FILE', '').strip()
+LEADER_YAW_MODE = os.environ.get('LEADER_YAW_MODE', 'file').strip().lower()
+
+
+def _wrap_degrees(angle_deg):
+    return (angle_deg + 180.0) % 360.0 - 180.0
+
+
+def _select_yaw(prev_ned, wp_ned, file_yaw_deg):
+    if LEADER_YAW_MODE == 'current':
+        return TRAIN_YAW_DEG
+    if LEADER_YAW_MODE == 'path':
+        dn = wp_ned[0] - prev_ned[0]
+        de = wp_ned[1] - prev_ned[1]
+        if abs(dn) < 1e-6 and abs(de) < 1e-6:
+            return _wrap_degrees(file_yaw_deg)
+        return _wrap_degrees(math.degrees(math.atan2(de, dn)))
+    return _wrap_degrees(file_yaw_deg)  # 'file'
+
+
+def _load_mission_waypoints(path):
+    """Convert a mission JSON into the leader's (n, e, d, yaw_deg, hold_s) tuples.
+
+    down_m in the JSON is an offset from waypoint 0, applied on top of the
+    COMMON_ALT_M takeoff baseline. The first tuple is the form-up hover point."""
+    with open(path, 'r', encoding='utf-8') as f:
+        mission = json.load(f)
+    items = mission.get('waypoints', [])
+    raw = []
+    for item in items:
+        ned = item['px4_ned']
+        raw.append((
+            float(ned['north_m']),
+            float(ned['east_m']),
+            -COMMON_ALT_M + float(ned['down_m']),
+            float(item.get('yaw_deg', 0.0)),
+        ))
+    if len(raw) < 2:
+        raise ValueError(f'mission {path} needs at least 2 waypoints')
+
+    waypoints = []
+    prev_ned = raw[0][:3]
+    for idx, (n, e, d, file_yaw) in enumerate(raw):
+        yaw = _select_yaw(prev_ned, (n, e, d), file_yaw)
+        if idx == 0:
+            hold_s = 5          # form-up hover
+        elif idx == len(raw) - 1:
+            hold_s = 10         # settle at the final waypoint
+        else:
+            hold_s = 0          # interpolation is continuous; no per-leg hold
+        waypoints.append((n, e, d, yaw, hold_s))
+        prev_ned = (n, e, d)
+    return waypoints
+
+
+if LEADER_MISSION_FILE:
+    LEADER_WAYPOINTS = _load_mission_waypoints(LEADER_MISSION_FILE)
+    print(f'[cv] leader route loaded from {LEADER_MISSION_FILE} '
+          f'({len(LEADER_WAYPOINTS)} waypoints, baseline alt={COMMON_ALT_M:.0f}m, '
+          f'yaw_mode={LEADER_YAW_MODE})', flush=True)
+else:
+    LEADER_WAYPOINTS = _build_leader_waypoints()
+    print(f'[cv] leader route = built-in turn pattern '
+          f'({len(LEADER_WAYPOINTS)} waypoints)', flush=True)
 
 
 def _state_str(value):
