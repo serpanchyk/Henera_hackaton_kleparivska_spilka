@@ -23,7 +23,11 @@ import os
 import signal
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+_REPO_ROOT = os.path.join(os.path.dirname(__file__), '..', '..')
+# drone_sdk now lives under examples/ (camera-frame-dedup merge), so put that on the
+# path too — keep the repo root as a fallback for older layouts.
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, 'examples'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import rclpy
