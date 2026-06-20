@@ -42,7 +42,7 @@ class FollowerControllerConfig:
     kp_forward: float = 0.02
     kp_vertical: float = 0.02
     max_yaw_rate: float = 30.0
-    max_forward_speed: float = 2.0
+    max_forward_speed: float = 3.0
     max_vertical_speed: float = 1.0
     yaw_dead_zone_deg: float = 1.0
     vertical_dead_zone_deg: float = 1.0

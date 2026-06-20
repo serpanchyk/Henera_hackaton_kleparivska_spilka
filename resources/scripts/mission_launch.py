@@ -6,7 +6,11 @@ from mavsdk.offboard import PositionNedYaw, OffboardError
 # --- Configuration Constants ---
 TAKEOFF_ALT_M = 1.0     # Take off exactly 1 meter above the platform
 STRAIGHT_DISTANCE_M = 12.0
-STRAIGHT_FLIGHT_S = 18
+# Matched to follower max_forward_speed (FollowerControllerConfig) so the
+# leader and the camera-only followers move at the same, faster pace.
+LEADER_CRUISE_SPEED_M_S = 3.0
+# 12 m at 3 m/s ≈ 4 s of travel; allow margin for accel/decel + settle.
+STRAIGHT_FLIGHT_S = 8
 FINAL_HOVER_S = 5
 
 async def run():
@@ -18,6 +22,14 @@ async def run():
         if state.is_connected:
             print("Drone discovered!")
             break
+
+    # Cap the leader's horizontal speed so it does not outrun the followers,
+    # which are limited to LEADER_CRUISE_SPEED_M_S by FollowerControllerConfig.
+    # MPC_XY_VEL_MAX bounds offboard position-setpoint speed; MPC_XY_CRUISE is
+    # set to match for auto/mission consistency.
+    print(f"-- Capping leader cruise speed to {LEADER_CRUISE_SPEED_M_S} m/s")
+    await drone.param.set_param_float("MPC_XY_VEL_MAX", LEADER_CRUISE_SPEED_M_S)
+    await drone.param.set_param_float("MPC_XY_CRUISE", LEADER_CRUISE_SPEED_M_S)
 
     print("-- Arming")
     await drone.action.arm()
