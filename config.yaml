@@ -34,7 +34,8 @@ follower_control:
   lost_timeout: 2.0             # s of no target before SEARCH
   observation_timeout: 0.5      # s; older observations are treated as stale
   lost_frames_threshold: 3      # was 1; tolerate brief detection dropouts instead of stalling forward on a single miss
-  reacquire_frames: 3           # consecutive good frames before resuming FOLLOW
+  reacquire_frames: 2           # was 3; resume FOLLOW after 2 good frames — fast enough to keep up, but >1 so a
+                                # single stray blob during SEARCH can't lock the wrong drone (-> spin/crash)
   smoothing_alpha: 0.4          # command smoothing (0 = none, ->1 = sluggish)
   search_yaw_rate: 10.0         # legacy; superseded by the scan sweep below
   search_yaw_sweep_deg: 30.0    # half-angle of the bounded SEARCH yaw sweep
@@ -43,7 +44,8 @@ follower_control:
   control_rate_hz: 10.0
   yaw_sign: 1.0
   vertical_sign: 1.0
-  lost_command_memory_s: 0.0    # s to coast on the last command after losing lock
+  lost_command_memory_s: 0.6    # was 0.0; briefly hold the last yaw/vertical correction through a short dropout
+                                # (keeps the target roughly centered instead of freezing the instant it blinks out)
 
 # ── Perception / acquisition thresholds ──────────────────────────────────────
 perception:
