@@ -1,26 +1,3 @@
-class DroneSDKError(Exception):
-    pass
+"""Compatibility wrapper for :mod:`drone_sdk.exceptions`."""
 
-
-class ConnectionError(DroneSDKError):
-    pass
-
-
-class TimeoutError(DroneSDKError):
-    pass
-
-
-class MAVSDKError(DroneSDKError):
-    pass
-
-
-class GazeboError(DroneSDKError):
-    pass
-
-
-class CameraError(DroneSDKError):
-    pass
-
-
-class LEDError(DroneSDKError):
-    pass
+from drone_sdk.exceptions import *  # noqa: F401,F403

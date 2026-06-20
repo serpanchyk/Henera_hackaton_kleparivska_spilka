@@ -11,7 +11,14 @@ import numpy as np
 from drone_sdk.ros_node import CameraFramePacket, DroneROSNode
 
 ROOT = Path(__file__).resolve().parents[1]
-PROVIDER_PATH = ROOT / 'resources' / 'scripts' / 'cv_vision_provider.py'
+PROVIDER_PATH = (
+    ROOT
+    / 'resources'
+    / 'scripts'
+    / 'henera_swarm'
+    / 'perception'
+    / 'cv_vision_provider.py'
+)
 
 
 def _load_provider_module():
@@ -25,8 +32,15 @@ def _load_provider_module():
     return module
 
 
-provider_module = _load_provider_module()
-CVVisionProvider = provider_module.CVVisionProvider
+try:
+    provider_module = _load_provider_module()
+except ModuleNotFoundError as exc:
+    if exc.name != 'cv2':
+        raise
+    provider_module = None
+
+HAS_CV2 = provider_module is not None
+CVVisionProvider = provider_module.CVVisionProvider if HAS_CV2 else None
 
 
 class _Bridge:
@@ -89,6 +103,7 @@ class CameraPacketTests(unittest.TestCase):
         self.assertEqual(second.ros_timestamp, 3.0000005)
 
 
+@unittest.skipUnless(HAS_CV2, 'OpenCV cv2 is required for CV provider tests')
 class CVFrameDeduplicationTests(unittest.TestCase):
     def setUp(self):
         self.drone = _FakeDrone(_packet(1, 10.0))
@@ -136,6 +151,43 @@ class CVFrameDeduplicationTests(unittest.TestCase):
         self.assertEqual(self.provider.last_debug['transition']['frame_sequence'], 2)
         self.assertEqual(self.provider.last_debug['transition']['frame_timestamp'], 10.1)
         self.assertTrue(self.provider.last_debug['transition']['decoder_sample_added'])
+
+    def test_implausibly_close_led_pair_drops_signal_before_decoder(self):
+        self.detect_patch.stop()
+        self.drone.packet = _packet(1, 10.0)
+        self.provider = CVVisionProvider(self.drone)
+
+        detections = [(5.0, 5.0, 12.0), (431.0, 5.0, 12.0)]
+        with patch.object(provider_module, '_detect_color', side_effect=detections):
+            observation = self.observe()
+
+        self.assertTrue(observation.target_visible)
+        self.assertTrue(self.provider.last_debug['anchor_visible'])
+        self.assertFalse(self.provider.last_debug['signal_visible'])
+        self.assertIsNone(self.provider.last_debug['estimated_range_m'])
+
+
+@unittest.skipUnless(HAS_CV2, 'OpenCV cv2 is required for CV provider tests')
+class CVPairFilterTests(unittest.TestCase):
+    def test_pair_range_filter_rejects_near_field_false_pair(self):
+        self.assertFalse(
+            provider_module._valid_led_pair(
+                (5.0, 5.0, 12.0),
+                (431.0, 5.0, 12.0),
+                width=640,
+                hfov_rad=provider_module.HFOV_RAD,
+            )
+        )
+
+    def test_pair_range_filter_accepts_plausible_pair(self):
+        self.assertTrue(
+            provider_module._valid_led_pair(
+                (310.0, 240.0, 12.0),
+                (340.0, 240.0, 12.0),
+                width=640,
+                hfov_rad=provider_module.HFOV_RAD,
+            )
+        )
 
 
 if __name__ == '__main__':

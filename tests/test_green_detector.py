@@ -4,8 +4,12 @@ import types
 import unittest
 from pathlib import Path
 
-import cv2
 import numpy as np
+
+try:
+    import cv2
+except ModuleNotFoundError:
+    cv2 = None
 
 PACKAGE_NAME = 'two_led_cv_detector_under_test'
 PACKAGE_PATH = Path(__file__).resolve().parents[1] / 'drone_sdk' / 'two_led_cv'
@@ -28,13 +32,15 @@ def load_module(name):
     return module
 
 
-load_module('types')
-green_detector = load_module('green_detector')
+if cv2 is not None:
+    load_module('types')
+    green_detector = load_module('green_detector')
 
-GreenLedDetector = green_detector.GreenLedDetector
-draw_debug = green_detector.draw_debug
+    GreenLedDetector = green_detector.GreenLedDetector
+    draw_debug = green_detector.draw_debug
 
 
+@unittest.skipIf(cv2 is None, 'OpenCV cv2 is required for green detector tests')
 class GreenLedDetectorTests(unittest.TestCase):
 
     def test_detects_green_led_blobs_sorted_by_confidence(self):

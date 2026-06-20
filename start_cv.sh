@@ -63,6 +63,31 @@ if [ "$READY" -eq 0 ]; then
 fi
 sleep 3
 
+# ── Leader mission selection ────────────────────────────────────────────────
+# Fly a converted mission JSON (resources/scripts/Mission/<file>) instead of the
+# built-in turn pattern. Change the mission without editing Python:
+#   bash start_cv.sh                       # default: mission_01.json
+#   bash start_cv.sh mission_02.json       # pick another file in Mission/
+#   MISSION_FILE=/abs/path.json bash start_cv.sh   # or an absolute path
+MISSION_DIR="$REPO/resources/scripts/Mission"
+MISSION="${1:-${MISSION:-mission_01.json}}"
+# Allow either a bare filename in Mission/ or an absolute/explicit path.
+if [ -f "$MISSION" ]; then
+    MISSION_FILE="$MISSION"
+else
+    MISSION_FILE="$MISSION_DIR/$MISSION"
+fi
+if [ ! -f "$MISSION_FILE" ]; then
+    echo "[start-cv] ERROR: mission file not found: $MISSION_FILE"
+    echo "[start-cv] Available missions in $MISSION_DIR:"
+    ls -1 "$MISSION_DIR"/*.json 2>/dev/null || echo "  (none)"
+    exit 1
+fi
+
+export LEADER_MISSION_FILE="$MISSION_FILE"
+export WATCHDOG_S="${WATCHDOG_S:-900}"        # long routes need more than the 300s default
+export LEADER_YAW_MODE="${LEADER_YAW_MODE:-file}"  # file = JSON yaw, path = face leg, current = spawn yaw
+
 echo "[start-cv] Launching CV end-to-end test..."
-echo "[start-cv] CV route: straight train-direction flight only; no turn pattern."
+echo "[start-cv] CV route: mission file -> $LEADER_MISSION_FILE (yaw_mode=$LEADER_YAW_MODE, watchdog=${WATCHDOG_S}s)"
 ros2 launch "$REPO/resources/scripts/cv_launch.py"

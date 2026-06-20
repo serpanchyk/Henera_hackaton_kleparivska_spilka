@@ -59,7 +59,9 @@ When both LEDs are visible, the target point is their midpoint. When only one LE
 - `drone_sdk/two_led_cv/types.py`: `LedBlob` and `TwoLedObservation` dataclasses.
 - `drone_sdk/two_led_cv/protocol.py`: LED indexes, masks, states, `make_led_mask()`, `mask_for_state()`, `led_states_for_state()`, and `signal_on_for_state()`.
 - Future detector module: `drone_sdk/two_led_cv/detector.py`.
-- Future integration point: replace `detect_led()` in `resources/scripts/follower.py` with a wrapper around the detector.
+- Integration point: `resources/scripts/follower.py` delegates to
+  `henera_swarm.orchestration.follower_runtime`, which reads camera samples
+  through `henera_swarm.perception.CVVisionProvider`.
 
 ## Manual Gazebo Checks
 
