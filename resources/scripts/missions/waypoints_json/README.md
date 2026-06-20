@@ -7,12 +7,13 @@
 Для запуску скрипта у новій консолі по замовченню:
  ```sh
 cd resources/scripts/missions/waypoints_json/
-python3 mission_launch.py mission_01.json --speed 3 
+python3 mission_launch.py mission_01.json
 ```
 
 В якості аргументу при запуску приймає:
 * назву файлу json, який має бути розташований в тій самій теці. 
-* --speed 3 швидкість в цифрі в метрах за секунду
+* --speed швидкість в метрах за секунду; якщо не задано, береться з `config.yaml`
+  через `drone_sdk.swarm_speeds`
 * -- yaw-mode path для розвороту дрону носом по шляху слідування
 * або -- yaw-mode file для розвороту згідно json файла
 По замовченню лрон не розвертається а стрейфить

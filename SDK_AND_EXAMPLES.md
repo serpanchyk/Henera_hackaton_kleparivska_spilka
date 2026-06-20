@@ -23,6 +23,9 @@ SDK побудований навколо двох підсистем:
 
 ### MAVSDK порти
 
+Базові порти задані в `config.yaml` (`ports.mavsdk_udp_base`,
+`ports.mavsdk_grpc_base`). З конфігом за замовчуванням:
+
 - Дрон 0: UDP `14540`, gRPC `50051`
 - Дрон 1: UDP `14541`, gRPC `50052`
 - Дрон 2: UDP `14542`, gRPC `50053`
@@ -30,8 +33,8 @@ SDK побудований навколо двох підсистем:
 
 SDK обчислює порти так:
 
-- UDP: `14540 + drone_id`
-- gRPC: `50051 + drone_id`
+- UDP: `CONFIG.ports.mavsdk_udp_base + drone_id`
+- gRPC: `CONFIG.ports.mavsdk_grpc_base + drone_id`
 
 ### Gazebo / ROS топіки
 

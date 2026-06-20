@@ -7,17 +7,25 @@ launch mission_launch.py or follower.py — the debug script owns leader+followe
 """
 import os
 import math
+import sys
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 LED_PLUGIN_BUILD_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), "plugins", "led_controller", "build")
-TRAIN_YAW_RAD = 3.7346
-SPAWN_Z_M = 1.4
-TRAIN_SPACING_M = 2.0
+_REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from drone_sdk.config import CONFIG
+
+FOLLOWER_COUNT = CONFIG.runtime.follower_count
+TRAIN_YAW_RAD = CONFIG.formation.train_yaw_rad
+SPAWN_Z_M = CONFIG.formation.spawn_z_m
+TRAIN_SPACING_M = CONFIG.formation.train_spacing_m
 
 
-def px4_instance(instance_id, x, y, z, yaw=3.7346):
+def px4_instance(instance_id, x, y, z, yaw=TRAIN_YAW_RAD):
     # Env vars are set explicitly so Gazebo gets them even in subprocess context
     cmd = f"""
         export DISPLAY=:0
@@ -48,7 +56,7 @@ def generate_launch_description():
     # Train formation:
     # - yaw is the train direction; all drones face the same way so cameras look forward.
     # - followers are spawned behind the previous drone along the opposite yaw vector.
-    # - 2.0 m spacing keeps each follower aimed at the previous drone's rear LED markers.
+    # - spacing is configured in config.yaml so launch and controller stay aligned.
     # - poses are always x,y,z,0,0,yaw to keep drones upright.
     leader_x = 127.0
     leader_y = 52.67
@@ -60,14 +68,13 @@ def generate_launch_description():
 
     # t=5s: drones 1,2,3 — attach to running Gazebo
     follower_positions = [
-        (1, leader_x + behind_dx, leader_y + behind_dy, SPAWN_Z_M),
-        (2, leader_x + 2 * behind_dx, leader_y + 2 * behind_dy, SPAWN_Z_M),
-        (3, leader_x + 3 * behind_dx, leader_y + 3 * behind_dy, SPAWN_Z_M),
+        (idx, leader_x + idx * behind_dx, leader_y + idx * behind_dy, SPAWN_Z_M)
+        for idx in range(1, FOLLOWER_COUNT + 1)
     ]
     for idx, x, y, z in follower_positions:
         actions.append(TimerAction(
             period=5.0,
-            actions=[px4_instance(idx, x, y, z)],
+            actions=[px4_instance(idx, x, y, z, TRAIN_YAW_RAD)],
         ))
 
     # t=25s: single-process debug orchestrator (waits another 15s for EKF itself)

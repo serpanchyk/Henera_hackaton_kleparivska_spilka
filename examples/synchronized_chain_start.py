@@ -14,6 +14,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from drone_sdk import (  # noqa: E402
+    CONFIG,
     FollowerController,
     FollowerControllerConfig,
     MissionState,
@@ -64,8 +65,8 @@ async def demo_start_barrier() -> None:
 async def run_real_chain_start(follower_count: int = 3) -> None:
     from drone_sdk import Drone, DroneFollowerActuator
 
-    config = StartupConfig(startup_altitude_m=10.0)
-    controller_config = FollowerControllerConfig.responsive()
+    config = StartupConfig(startup_altitude_m=CONFIG.runtime.common_alt_m)
+    controller_config = FollowerControllerConfig.stable()
     links = build_chain_config(follower_count)
     leader = Drone(drone_id=0)
     followers = [Drone(drone_id=link.drone_id) for link in links]
@@ -126,7 +127,7 @@ async def run_real_chain_start(follower_count: int = 3) -> None:
 async def run_with_coordinator(follower_count: int = 3) -> None:
     from drone_sdk import Drone
 
-    config = StartupConfig(startup_altitude_m=10.0)
+    config = StartupConfig(startup_altitude_m=CONFIG.runtime.common_alt_m)
     coordinator = SwarmStartupCoordinator(config=config)
     links = build_chain_config(follower_count)
     leader = Drone(drone_id=0)

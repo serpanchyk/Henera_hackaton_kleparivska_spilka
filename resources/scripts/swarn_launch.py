@@ -22,7 +22,7 @@ TRAIN_YAW_RAD = CONFIG.formation.train_yaw_rad
 SPAWN_Z_M = CONFIG.formation.spawn_z_m
 TRAIN_SPACING_M = CONFIG.formation.train_spacing_m
 
-def leader_instanse(x, y, z, yaw=3.7346):
+def leader_instanse(x, y, z, yaw=TRAIN_YAW_RAD):
         cmd = f"""
             export DISPLAY=:0
             export PX4_DIR="${{PX4_DIR:-$HOME/PX4-Autopilot}}"
@@ -42,7 +42,7 @@ def leader_instanse(x, y, z, yaw=3.7346):
                 output="screen"
         )
 
-def follower_instanse(i, x, y, z, yaw=3.7346):
+def follower_instanse(i, x, y, z, yaw=TRAIN_YAW_RAD):
         cmd = f"""
             export DISPLAY=:0
             export PX4_DIR="${{PX4_DIR:-$HOME/PX4-Autopilot}}"
@@ -103,7 +103,7 @@ def generate_launch_description():
                                 period=5.0,
                                 actions=[
                                         follower_instanse(
-                                                idx, x, y, z
+                                                idx, x, y, z, TRAIN_YAW_RAD
                                                 )
                                         ]
                         )

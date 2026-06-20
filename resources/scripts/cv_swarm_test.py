@@ -795,11 +795,6 @@ async def main():
                 FollowerControllerConfig.matched(
                     LEADER_CRUISE_SPEED_M_S,
                     control_rate_hz=CONTROL_HZ,
-                    search_yaw_rate=20.0,
-                    kp_forward=0.05,
-                    reacquire_frames=1,
-                    lost_timeout=1.0,
-                    lost_command_memory_s=0.8,
                 ),
             )
             actuator = DroneFollowerActuator(drones[fid])

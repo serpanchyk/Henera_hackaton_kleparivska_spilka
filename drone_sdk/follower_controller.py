@@ -124,15 +124,8 @@ class FollowerControllerConfig:
 
     @classmethod
     def responsive(cls) -> 'FollowerControllerConfig':
-        return cls(
-            control_rate_hz=20.0,
-            reacquire_frames=2,
-            observation_timeout=0.25,
-            smoothing_alpha=0.2,
-            kp_yaw=1.5,
-            kp_forward=0.03,
-            kp_vertical=0.03,
-        )
+        # Kept for API compatibility. Controller tuning now lives in config.yaml.
+        return cls()
 
 
 @dataclass(frozen=True)

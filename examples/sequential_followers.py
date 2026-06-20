@@ -11,7 +11,6 @@ Run:
 """
 
 import asyncio
-from dataclasses import replace
 import importlib.util
 import os
 import sys
@@ -24,6 +23,7 @@ try:
         FollowerController,
         FollowerControllerConfig,
         FollowerStartupConfig,
+        CONFIG,
         MissionState,
         VisualObservation,
         build_chain_config,
@@ -39,6 +39,7 @@ except ModuleNotFoundError:
     FollowerController = follower_controller.FollowerController
     FollowerControllerConfig = follower_controller.FollowerControllerConfig
     FollowerStartupConfig = follower_controller.FollowerStartupConfig
+    CONFIG = follower_controller.CONFIG
     MissionState = follower_controller.MissionState
     VisualObservation = follower_controller.VisualObservation
     build_chain_config = follower_controller.build_chain_config
@@ -65,11 +66,7 @@ def observation(
 
 
 def build_controllers(follower_count):
-    cfg = replace(
-        FollowerControllerConfig.responsive(),
-        lost_timeout=0.3,
-        observation_timeout=0.2,
-    )
+    cfg = FollowerControllerConfig.stable()
     return [
         FollowerController(link.follower_id, link.target_id, cfg)
         for link in build_chain_config(follower_count)
@@ -158,11 +155,11 @@ async def run_real_chain_example(follower_count=2):
 
         await prepare_followers_for_chain(
             drones,
-            FollowerStartupConfig(startup_altitude_m=10.0),
+            FollowerStartupConfig(startup_altitude_m=CONFIG.runtime.common_alt_m),
         )
 
         controllers = [
-            FollowerController(link.follower_id, link.target_id, FollowerControllerConfig.responsive())
+            FollowerController(link.follower_id, link.target_id, FollowerControllerConfig.stable())
             for link in links
         ]
         actuators = [DroneFollowerActuator(drone) for drone in drones]

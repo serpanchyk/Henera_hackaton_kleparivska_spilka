@@ -15,30 +15,30 @@
 # backs off gently rather than slamming into reverse). CV tracking degrades at
 # high speed, so raise leader_cruise_m_s gradually.
 speeds:
-  leader_cruise_m_s: 1.0
-  follower_forward_ratio: 1.5   # follower max forward = leader_cruise * this
+  leader_cruise_m_s: 0.8        # was 1.0; eased so followers can hold formation + CV stays reliable
+  follower_forward_ratio: 2.0   # was 1.5; follower max forward = leader_cruise * this (more catch-up margin)
   follower_reverse_ratio: 0.4   # follower max reverse = leader_cruise * this
 
 # ── Follower controller (vision -> velocity gains, dead zones, timeouts) ─────
 # Forward/reverse speed caps are NOT here — they come from `speeds` above.
 follower_control:
-  desired_target_size: 110.0    # target apparent size (px) the follower holds
+  desired_target_size: 130.0    # was 110; hold a TIGHTER gap so the LED stays large -> detection stays solid -> no flicker/stall
   kp_yaw: 1.0
-  kp_forward: 0.02
+  kp_forward: 0.06              # was 0.02; less steady-state lag (smaller gap holds the leader)
   kp_vertical: 0.02
-  max_yaw_rate: 30.0            # deg/s
-  max_vertical_speed: 1.0       # m/s
+  max_yaw_rate: 22.0            # deg/s; was 30 — gentler so a re-lock at a wide angle doesn't spin/crash
+  max_vertical_speed: 0.5       # m/s; was 1.0 — cap the dives that drove the altitude loss / crashes
   yaw_dead_zone_deg: 1.0
   vertical_dead_zone_deg: 1.0
   size_dead_zone: 5.0           # px; ignore size error smaller than this
   lost_timeout: 2.0             # s of no target before SEARCH
   observation_timeout: 0.5      # s; older observations are treated as stale
-  lost_frames_threshold: 1
+  lost_frames_threshold: 3      # was 1; tolerate brief detection dropouts instead of stalling forward on a single miss
   reacquire_frames: 3           # consecutive good frames before resuming FOLLOW
   smoothing_alpha: 0.4          # command smoothing (0 = none, ->1 = sluggish)
   search_yaw_rate: 10.0         # legacy; superseded by the scan sweep below
   search_yaw_sweep_deg: 30.0    # half-angle of the bounded SEARCH yaw sweep
-  search_vertical_speed: 0.5    # m/s altitude bob during SEARCH
+  search_vertical_speed: 0.3    # was 0.5; less altitude drift while scanning (kept the chain from diverging in z)
   search_period_s: 8.0          # s for one full SEARCH sweep cycle
   control_rate_hz: 10.0
   yaw_sign: 1.0

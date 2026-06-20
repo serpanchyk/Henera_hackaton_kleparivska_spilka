@@ -9,6 +9,7 @@ from mavsdk.offboard import PositionNedYaw, OffboardError
 # Repo root on the path so the shared swarm speed profile is the single source
 # of truth (drone_sdk/swarm_speeds.py) rather than a duplicated local constant.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+from drone_sdk.config import CONFIG
 from drone_sdk.swarm_speeds import LEADER_CRUISE_SPEED_M_S
 
 # --- Configuration Constants ---
@@ -18,10 +19,11 @@ STRAIGHT_DISTANCE_M = 12.0
 # follower chase speed. Allow generous travel time so the leg always completes.
 STRAIGHT_FLIGHT_S = max(7, math.ceil(STRAIGHT_DISTANCE_M / LEADER_CRUISE_SPEED_M_S) + 4)
 FINAL_HOVER_S = 5
+DEFAULT_CONNECTION = f"udpin://0.0.0.0:{CONFIG.ports.mavsdk_udp_base}"
 
 async def run():
     drone = System()
-    await drone.connect(system_address="udpin://0.0.0.0:14540")
+    await drone.connect(system_address=DEFAULT_CONNECTION)
 
     print("Waiting for drone to connect...")
     async for state in drone.core.connection_state():

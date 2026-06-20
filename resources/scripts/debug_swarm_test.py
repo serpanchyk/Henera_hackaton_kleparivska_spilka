@@ -20,6 +20,7 @@ Run via resources/scripts/debug_launch.py (sim + this script), or standalone in
 a second terminal after the sim is up:  python3 debug_swarm_test.py
 """
 import asyncio
+import math
 import os
 import signal
 import sys
@@ -37,27 +38,35 @@ from drone_sdk.follower_controller import (
     FollowerState,
     build_chain_config,
 )
+from drone_sdk.config import CONFIG
 from debug_vision_provider import DebugVisionProvider
 from results_logger import ResultsLogger
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 
-FOLLOWER_COUNT = 3            # drones 0 (leader) + 1,2,3 (followers)
-COMMON_ALT_M = 5.0           # leader cruise altitude
-EKF_SETTLE_S = 15.0          # wait after connect before arming (matches follower.py)
-HOVER_SETTLE_S = 8.0         # wait for takeoff to reach hover
-CONTROL_HZ = 10.0
-WATCHDOG_S = 180.0           # hard cap on the whole test
+FOLLOWER_COUNT = CONFIG.runtime.follower_count
+COMMON_ALT_M = CONFIG.runtime.common_alt_m
+EKF_SETTLE_S = CONFIG.runtime.ekf_settle_s
+HOVER_SETTLE_S = CONFIG.runtime.hover_settle_s
+CONTROL_HZ = CONFIG.runtime.control_hz
+WATCHDOG_S = CONFIG.runtime.watchdog_s
 STRAIGHT_DISTANCE_M = 10.0
 FINAL_HOVER_S = 5.0
 
-# Gazebo world spawn poses (x=East, y=North, z=Up) — must match solution_launch.py
+# Gazebo world spawn poses (x=East, y=North, z=Up) — must match launch config.
+SPAWN_LEADER_X = 127.0
+SPAWN_LEADER_Y = 52.67
+_BEHIND_DX = -CONFIG.formation.train_spacing_m * math.cos(CONFIG.formation.train_yaw_rad)
+_BEHIND_DY = -CONFIG.formation.train_spacing_m * math.sin(CONFIG.formation.train_yaw_rad)
 SPAWNS = {
-    0: (127.0, 52.67, 1.4),
-    1: (129.92, 52.852, 1.4),
-    2: (129.08, 54.095, 1.4),
-    3: (128.24, 55.339, 1.4),
+    0: (SPAWN_LEADER_X, SPAWN_LEADER_Y, CONFIG.formation.spawn_z_m),
 }
+for _idx in range(1, FOLLOWER_COUNT + 1):
+    SPAWNS[_idx] = (
+        SPAWN_LEADER_X + _idx * _BEHIND_DX,
+        SPAWN_LEADER_Y + _idx * _BEHIND_DY,
+        CONFIG.formation.spawn_z_m,
+    )
 
 # Leader route in its OWN local NED: (north, east, down, yaw_deg, hold_s).
 # Straight mission only: take off, fly forward, hold briefly, then land.

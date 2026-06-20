@@ -3,6 +3,7 @@ import time
 import unittest
 
 from drone_sdk.follower_controller import (
+    CONFIG,
     FollowerControllerConfig,
     MissionState,
     VisualObservation,
@@ -65,7 +66,7 @@ def obs(
     visible=True,
     h=0.0,
     v=0.0,
-    size=80.0,
+    size=None,
     state=MissionState.FOLLOW,
     timestamp=None,
 ):
@@ -73,7 +74,7 @@ def obs(
         target_visible=visible,
         horizontal_angle_deg=h,
         vertical_angle_deg=v,
-        target_size=size,
+        target_size=CONFIG.follower_control.desired_target_size if size is None else size,
         mission_state=state,
         timestamp=time.monotonic() if timestamp is None else timestamp,
     )

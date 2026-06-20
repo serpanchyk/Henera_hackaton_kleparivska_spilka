@@ -2,6 +2,7 @@
 
 import math
 
+from ..config import CONFIG
 from ..follower_controller import VisualObservation
 
 
@@ -12,7 +13,7 @@ def two_led_to_visual(
     horizontal_fov_rad: float = 1.6,
     frame_aspect: float = 0.75,
     size_gain: float = 240.0,
-    desired_target_size: float = 80.0,
+    desired_target_size: float = CONFIG.follower_control.desired_target_size,
     min_range_m: float = 0.3,
 ) -> VisualObservation:
     """Convert one decoded camera sample using its original frame timestamp."""

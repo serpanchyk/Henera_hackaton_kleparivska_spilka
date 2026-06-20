@@ -6,16 +6,21 @@ from launch.actions import ExecuteProcess, TimerAction
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
+_REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 from henera_swarm.launch_utils import (
     TrainFormationConfig,
     px4_instance,
     train_positions,
 )
+from drone_sdk.config import CONFIG
 
-TRAIN_YAW_RAD = 3.7346
-SPAWN_Z_M = 1.4
-TRAIN_SPACING_M = 1.5
+FOLLOWER_COUNT = CONFIG.runtime.follower_count
+TRAIN_YAW_RAD = CONFIG.formation.train_yaw_rad
+SPAWN_Z_M = CONFIG.formation.spawn_z_m
+TRAIN_SPACING_M = CONFIG.formation.train_spacing_m
 
 
 def leader_mission_process():
@@ -41,7 +46,7 @@ def generate_launch_description():
             z=SPAWN_Z_M,
             yaw_rad=TRAIN_YAW_RAD,
             spacing_m=TRAIN_SPACING_M,
-            follower_count=3,
+            follower_count=FOLLOWER_COUNT,
         )
     )
 
@@ -62,8 +67,8 @@ def generate_launch_description():
         actions=[leader_mission_process()],
     ))
 
-    # t=22s: follower scripts for drones 1, 2, 3
-    for drone_id in [1, 2, 3]:
+    # t=22s: follower scripts for configured follower drones
+    for drone_id in range(1, FOLLOWER_COUNT + 1):
         actions.append(TimerAction(
             period=22.0,
             actions=[follower_process(drone_id)],

@@ -13,7 +13,8 @@ from drone_sdk import Drone, MAVSDKError
 
 ## Ports
 
-MAVSDK ports are derived from `drone_id`:
+MAVSDK ports are derived from `drone_id` and the base ports in `config.yaml`
+(`ports.mavsdk_udp_base`, `ports.mavsdk_grpc_base`). With the default config:
 
 | Drone | UDP | gRPC |
 | --- | ---: | ---: |
@@ -25,8 +26,8 @@ MAVSDK ports are derived from `drone_id`:
 The SDK computes:
 
 ```text
-UDP = 14540 + drone_id
-gRPC = 50051 + drone_id
+UDP = CONFIG.ports.mavsdk_udp_base + drone_id
+gRPC = CONFIG.ports.mavsdk_grpc_base + drone_id
 ```
 
 ## Gazebo / ROS Topics

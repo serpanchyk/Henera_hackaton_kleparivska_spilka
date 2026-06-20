@@ -356,23 +356,21 @@ class StartupHelperTests(unittest.IsolatedAsyncioTestCase):
 
 class ProfileAndActuatorTests(unittest.IsolatedAsyncioTestCase):
 
-    def test_responsive_profile_has_higher_rate_and_less_smoothing(self):
+    def test_responsive_profile_uses_central_config_defaults(self):
         stable = FollowerControllerConfig.stable()
         responsive = FollowerControllerConfig.responsive()
-        self.assertGreater(responsive.control_rate_hz, stable.control_rate_hz)
-        self.assertLess(responsive.smoothing_alpha, stable.smoothing_alpha)
-        self.assertEqual(responsive.reacquire_frames, 2)
+        self.assertEqual(responsive, stable)
 
-    def test_responsive_profile_reacquires_faster_than_stable(self):
+    def test_configured_reacquire_frames_gate_follow(self):
         stable_controller = FollowerController('follower_1', 'leader', FollowerControllerConfig.stable())
-        responsive_controller = FollowerController('follower_1', 'leader', FollowerControllerConfig.responsive())
-        stable_first = stable_controller.update(obs(t=0.0), current_time=0.0)
-        stable_second = stable_controller.update(obs(t=0.1), current_time=0.1)
-        responsive_first = responsive_controller.update(obs(t=0.0), current_time=0.0)
-        responsive_second = responsive_controller.update(obs(t=0.1), current_time=0.1)
-        self.assertNotEqual(stable_second.state, FollowerState.FOLLOW)
-        self.assertEqual(responsive_first.state, FollowerState.SEARCH)
-        self.assertEqual(responsive_second.state, FollowerState.FOLLOW)
+        for index in range(max(1, stable_controller.config.reacquire_frames) - 1):
+            command = stable_controller.update(obs(t=index * 0.1), current_time=index * 0.1)
+            self.assertNotEqual(command.state, FollowerState.FOLLOW)
+        command = stable_controller.update(
+            obs(t=stable_controller.config.reacquire_frames * 0.1),
+            current_time=stable_controller.config.reacquire_frames * 0.1,
+        )
+        self.assertEqual(command.state, FollowerState.FOLLOW)
 
     def test_search_scans_yaw_and_vertical_instead_of_spinning(self):
         c = controller(search_yaw_sweep_deg=30.0, search_vertical_speed=0.5, search_period_s=8.0)

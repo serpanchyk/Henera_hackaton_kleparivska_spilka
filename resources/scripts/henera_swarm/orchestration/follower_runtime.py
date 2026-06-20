@@ -25,16 +25,17 @@ from drone_sdk.follower_controller import (
     FollowerControllerConfig,
     MissionState,
 )
+from drone_sdk.config import CONFIG
 from drone_sdk.two_led_cv import mask_for_state
 from henera_swarm.logging import ResultsLogger
 from henera_swarm.perception import CVVisionProvider
 
-TAKEOFF_ALT_M = 10.0
-EKF_SETTLE_S = 15.0
+TAKEOFF_ALT_M = CONFIG.runtime.common_alt_m
+EKF_SETTLE_S = CONFIG.runtime.ekf_settle_s
 TAKEOFF_SETTLE_S = 5.0
-FINISH_DESCENT_SPEED_MS = 0.6
-FINISH_DESCENT_TIMEOUT_S = 25.0
-FINISH_GROUND_ALT_M = 1.2
+FINISH_DESCENT_SPEED_MS = CONFIG.runtime.finish_descent_speed_ms
+FINISH_DESCENT_TIMEOUT_S = CONFIG.runtime.finish_descent_timeout_s
+FINISH_GROUND_ALT_M = CONFIG.runtime.finish_ground_alt_m
 
 
 def _state_str(value) -> str:

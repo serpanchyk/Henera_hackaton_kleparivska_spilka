@@ -1,5 +1,13 @@
 import math
+import os
+import sys
 from dataclasses import dataclass
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from drone_sdk.config import CONFIG
 
 
 @dataclass(frozen=True)
@@ -15,10 +23,10 @@ class SpawnPose:
 class TrainFormationConfig:
     leader_x: float = 127.0
     leader_y: float = 52.67
-    z: float = 1.4
-    yaw_rad: float = 3.7346
-    spacing_m: float = 2.0
-    follower_count: int = 3
+    z: float = CONFIG.formation.spawn_z_m
+    yaw_rad: float = CONFIG.formation.train_yaw_rad
+    spacing_m: float = CONFIG.formation.train_spacing_m
+    follower_count: int = CONFIG.runtime.follower_count
 
 
 def train_positions(config: TrainFormationConfig) -> list[SpawnPose]:
