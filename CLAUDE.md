@@ -115,10 +115,15 @@ python3 examples/demo.py          # один дрон
 python3 examples/swarm_waypoints.py  # 4 дрони
 ```
 
-**Місія лідера:**
+**Місія лідера** (кожна місія — в окремій теці `resources/scripts/missions/<name>/`):
 ```bash
-cd /mnt/c/Users/masar/genera/Henera_hackaton_kleparivska_spilka/resources/scripts
+# Прямий політ (12 м):
+cd /mnt/c/Users/masar/genera/Henera_hackaton_kleparivska_spilka/resources/scripts/missions/straight_line
 python3 mission_launch.py
+
+# За waypoint-JSON:
+cd /mnt/c/Users/masar/genera/Henera_hackaton_kleparivska_spilka/resources/scripts/missions/waypoints_json
+python3 mission_launch.py mission_01.json --speed 3
 ```
 
 ## Development Rules

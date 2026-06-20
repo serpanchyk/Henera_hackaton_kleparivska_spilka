@@ -107,7 +107,7 @@ def _build_leader_waypoints():
     return waypoints
 
 
-# Optional: fly a converted mission JSON (e.g. Mission/mission_01.json) instead of
+# Optional: fly a converted mission JSON (e.g. missions/waypoints_json/mission_01.json) instead of
 # the built-in turn pattern. Point LEADER_MISSION_FILE at its path (start_cv.sh
 # exports it) to switch missions without editing this file. The mission's px4_ned
 # offsets are relative to the leader spawn (mission origin == leader spawn), so the

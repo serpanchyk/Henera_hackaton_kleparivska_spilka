@@ -1,9 +1,12 @@
-## Скрипт автономної міссії дрона-лідера
+## Місія лідера за waypoint-JSON
+
+Автономна місія дрона-лідера, що летить за списком waypoint-ів з JSON-файла
+(наприклад `mission_01.json`, конвертований з Blender). Параметризується аргументами.
 
 ### Скрипт запускається з нової консолі з теки де він розташований.
 Для запуску скрипта у новій консолі по замовченню:
  ```sh
-cd ~/falcon_gaze/resources/scripts/mission/
+cd resources/scripts/missions/waypoints_json/
 python3 mission_launch.py mission_01.json --speed 3 
 ```
 

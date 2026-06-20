@@ -20,7 +20,7 @@ TRAIN_SPACING_M = 1.5
 
 def leader_mission_process():
     return ExecuteProcess(
-        cmd=["python3", os.path.join(SCRIPTS_DIR, "mission_launch.py")],
+        cmd=["python3", os.path.join(SCRIPTS_DIR, "missions", "straight_line", "mission_launch.py")],
         output="screen",
     )
 

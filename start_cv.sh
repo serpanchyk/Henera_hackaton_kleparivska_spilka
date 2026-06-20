@@ -64,23 +64,34 @@ fi
 sleep 3
 
 # ── Leader mission selection ────────────────────────────────────────────────
-# Fly a converted mission JSON (resources/scripts/Mission/<file>) instead of the
-# built-in turn pattern. Change the mission without editing Python:
-#   bash start_cv.sh                       # default: mission_01.json
-#   bash start_cv.sh mission_02.json       # pick another file in Mission/
-#   MISSION_FILE=/abs/path.json bash start_cv.sh   # or an absolute path
-MISSION_DIR="$REPO/resources/scripts/Mission"
-MISSION="${1:-${MISSION:-mission_01.json}}"
-# Allow either a bare filename in Mission/ or an absolute/explicit path.
-if [ -f "$MISSION" ]; then
-    MISSION_FILE="$MISSION"
+# Pick a mission by its FOLDER NAME under resources/scripts/missions/. The CV
+# path flies a converted waypoint JSON, so the chosen folder must contain one
+# (default file: mission_01.json). Change the mission without editing Python:
+#   bash start_cv.sh                          # default folder: waypoints_json
+#   bash start_cv.sh waypoints_json           # pick a mission folder by name
+#   bash start_cv.sh waypoints_json m2.json   # folder + a specific JSON file
+#   MISSION_FILE=/abs/path.json bash start_cv.sh   # bypass with an explicit path
+MISSIONS_DIR="$REPO/resources/scripts/missions"
+MISSION_NAME="${1:-${MISSION:-waypoints_json}}"
+MISSION_JSON="${2:-mission_01.json}"
+
+if [ -n "$MISSION_FILE" ]; then
+    : # explicit MISSION_FILE env override wins — use as-is
 else
-    MISSION_FILE="$MISSION_DIR/$MISSION"
+    MISSION_DIR="$MISSIONS_DIR/$MISSION_NAME"
+    if [ ! -d "$MISSION_DIR" ]; then
+        echo "[start-cv] ERROR: mission folder not found: $MISSION_DIR"
+        echo "[start-cv] Available mission folders in $MISSIONS_DIR:"
+        ls -1d "$MISSIONS_DIR"/*/ 2>/dev/null | xargs -n1 basename 2>/dev/null || echo "  (none)"
+        exit 1
+    fi
+    MISSION_FILE="$MISSION_DIR/$MISSION_JSON"
 fi
+
 if [ ! -f "$MISSION_FILE" ]; then
-    echo "[start-cv] ERROR: mission file not found: $MISSION_FILE"
-    echo "[start-cv] Available missions in $MISSION_DIR:"
-    ls -1 "$MISSION_DIR"/*.json 2>/dev/null || echo "  (none)"
+    echo "[start-cv] ERROR: mission JSON not found: $MISSION_FILE"
+    echo "[start-cv] Available JSON in ${MISSION_DIR:-$MISSIONS_DIR}:"
+    ls -1 "${MISSION_DIR:-$MISSIONS_DIR}"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null || echo "  (none)"
     exit 1
 fi
 
