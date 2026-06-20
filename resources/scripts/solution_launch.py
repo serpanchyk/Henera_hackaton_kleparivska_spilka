@@ -1,6 +1,11 @@
 import os
+import sys
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
+
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
 
 from henera_swarm.launch_utils import (
     TrainFormationConfig,
@@ -8,7 +13,6 @@ from henera_swarm.launch_utils import (
     train_positions,
 )
 
-SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 TRAIN_YAW_RAD = 3.7346
 SPAWN_Z_M = 1.4
 TRAIN_SPACING_M = 2.0
