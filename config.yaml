@@ -15,19 +15,21 @@
 # backs off gently rather than slamming into reverse). CV tracking degrades at
 # high speed, so raise leader_cruise_m_s gradually.
 speeds:
-  leader_cruise_m_s: 0.8        # was 1.0; eased so followers can hold formation + CV stays reliable
-  follower_forward_ratio: 2.0   # was 1.5; follower max forward = leader_cruise * this (more catch-up margin)
+  leader_cruise_m_s: 0.8        # eased so followers can hold formation + CV stays reliable
+  follower_forward_ratio: 1.5   # follower max forward = leader_cruise * this (=1.2 m/s; enough catch-up, not a charge)
   follower_reverse_ratio: 0.4   # follower max reverse = leader_cruise * this
 
 # ── Follower controller (vision -> velocity gains, dead zones, timeouts) ─────
 # Forward/reverse speed caps are NOT here — they come from `speeds` above.
 follower_control:
-  desired_target_size: 130.0    # was 110; hold a TIGHTER gap so the LED stays large -> detection stays solid -> no flicker/stall
+  desired_target_size: 90.0     # ~2.6 m hold distance — just BEHIND the 2.5 m spawn spacing, so followers
+                                # ease back into formation instead of charging/crowding the leader (the crash cause).
+                                # Was 130 (~1.7 m) which drove follower 1 into the leader's wake -> fell out of the sky.
   kp_yaw: 1.0
-  kp_forward: 0.06              # was 0.02; less steady-state lag (smaller gap holds the leader)
+  kp_forward: 0.03              # gentle approach; 0.06 caused a violent surge/reverse limit cycle (size 30<->585)
   kp_vertical: 0.02
-  max_yaw_rate: 22.0            # deg/s; was 30 — gentler so a re-lock at a wide angle doesn't spin/crash
-  max_vertical_speed: 0.5       # m/s; was 1.0 — cap the dives that drove the altitude loss / crashes
+  max_yaw_rate: 22.0            # deg/s; gentler so a re-lock at a wide angle doesn't spin/crash
+  max_vertical_speed: 0.4       # m/s; cap the dives + slow the sink when chasing a target that drifted low
   yaw_dead_zone_deg: 1.0
   vertical_dead_zone_deg: 1.0
   size_dead_zone: 5.0           # px; ignore size error smaller than this
@@ -36,7 +38,7 @@ follower_control:
   lost_frames_threshold: 3      # was 1; tolerate brief detection dropouts instead of stalling forward on a single miss
   reacquire_frames: 2           # was 3; resume FOLLOW after 2 good frames — fast enough to keep up, but >1 so a
                                 # single stray blob during SEARCH can't lock the wrong drone (-> spin/crash)
-  smoothing_alpha: 0.4          # command smoothing (0 = none, ->1 = sluggish)
+  smoothing_alpha: 0.55         # was 0.4; more damping to kill the command oscillation seen in the last run
   search_yaw_rate: 10.0         # legacy; superseded by the scan sweep below
   search_yaw_sweep_deg: 30.0    # half-angle of the bounded SEARCH yaw sweep
   search_vertical_speed: 0.3    # was 0.5; less altitude drift while scanning (kept the chain from diverging in z)
