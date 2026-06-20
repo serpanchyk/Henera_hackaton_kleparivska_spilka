@@ -16,7 +16,7 @@
 # high speed, so raise leader_cruise_m_s gradually.
 speeds:
   leader_cruise_m_s: 0.8        # eased so followers can hold formation + CV stays reliable
-  follower_forward_ratio: 1.5   # follower max forward = leader_cruise * this (=1.2 m/s; enough catch-up, not a charge)
+  follower_forward_ratio: 1.8   # follower max forward = leader_cruise * this (=1.44 m/s; headroom to actually close the gap)
   follower_reverse_ratio: 0.4   # follower max reverse = leader_cruise * this
 
 # ── Follower controller (vision -> velocity gains, dead zones, timeouts) ─────
@@ -26,7 +26,8 @@ follower_control:
                                 # ease back into formation instead of charging/crowding the leader (the crash cause).
                                 # Was 130 (~1.7 m) which drove follower 1 into the leader's wake -> fell out of the sky.
   kp_yaw: 1.0
-  kp_forward: 0.03              # gentle approach; 0.06 caused a violent surge/reverse limit cycle (size 30<->585)
+  kp_forward: 0.05              # tighter hold: 0.03 let follower 1 drift to ~6 m and lose the leader; 0.06 (with the
+                                # old close gap) oscillated, but at desired_size=90 there's no crowding, so 0.05 is safe
   kp_vertical: 0.02
   max_yaw_rate: 22.0            # deg/s; gentler so a re-lock at a wide angle doesn't spin/crash
   max_vertical_speed: 0.4       # m/s; cap the dives + slow the sink when chasing a target that drifted low
@@ -38,7 +39,7 @@ follower_control:
   lost_frames_threshold: 3      # was 1; tolerate brief detection dropouts instead of stalling forward on a single miss
   reacquire_frames: 2           # was 3; resume FOLLOW after 2 good frames — fast enough to keep up, but >1 so a
                                 # single stray blob during SEARCH can't lock the wrong drone (-> spin/crash)
-  smoothing_alpha: 0.55         # was 0.4; more damping to kill the command oscillation seen in the last run
+  smoothing_alpha: 0.5          # some damping for stability, but less sluggish than 0.55 so forward tracks the leader
   search_yaw_rate: 10.0         # legacy; superseded by the scan sweep below
   search_yaw_sweep_deg: 30.0    # half-angle of the bounded SEARCH yaw sweep
   search_vertical_speed: 0.3    # was 0.5; less altitude drift while scanning (kept the chain from diverging in z)
