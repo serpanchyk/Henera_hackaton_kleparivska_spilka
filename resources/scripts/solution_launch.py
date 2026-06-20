@@ -1,28 +1,21 @@
 import os
-import math
+import sys
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
+from henera_swarm.launch_utils import (
+    TrainFormationConfig,
+    px4_instance,
+    train_positions,
+)
+
 TRAIN_YAW_RAD = 3.7346
 SPAWN_Z_M = 1.4
 TRAIN_SPACING_M = 2.0
-
-
-def px4_instance(instance_id, x, y, z, yaw=3.7346):
-    # Env vars are set explicitly so Gazebo gets them even in subprocess context
-    cmd = f"""
-        export DISPLAY=:0
-        export MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA
-        export GZ_RENDER_ENGINE=ogre2
-        cd ~/PX4-Autopilot/ &&
-        PX4_SYS_AUTOSTART=4010 \
-        PX4_SIM_MODEL=gz_x500_mono_cam \
-        PX4_GZ_WORLD=baylands_custom \
-        PX4_GZ_MODEL_POSE="{x},{y},{z},0,0,{yaw}" \
-        ./build/px4_sitl_default/bin/px4 -i {instance_id}
-        """
-    return ExecuteProcess(cmd=["bash", "-c", cmd], output="screen")
 
 
 def leader_mission_process():
@@ -41,29 +34,26 @@ def follower_process(drone_id):
 
 def generate_launch_description():
     actions = []
-    # Train formation:
-    # - yaw is the train direction; all drones face the same way so cameras look forward.
-    # - followers are spawned behind the previous drone along the opposite yaw vector.
-    # - 2.0 m spacing keeps each follower aimed at the previous drone's rear LED markers.
-    # - poses are always x,y,z,0,0,yaw to keep drones upright.
-    leader_x = 127.0
-    leader_y = 52.67
-    behind_dx = -TRAIN_SPACING_M * math.cos(TRAIN_YAW_RAD)
-    behind_dy = -TRAIN_SPACING_M * math.sin(TRAIN_YAW_RAD)
+    poses = train_positions(
+        TrainFormationConfig(
+            leader_x=127.0,
+            leader_y=52.67,
+            z=SPAWN_Z_M,
+            yaw_rad=TRAIN_YAW_RAD,
+            spacing_m=TRAIN_SPACING_M,
+            follower_count=3,
+        )
+    )
 
     # t=0s: drone 0 (leader) — starts Gazebo
-    actions.append(px4_instance(0, leader_x, leader_y, SPAWN_Z_M, TRAIN_YAW_RAD))
+    leader = poses[0]
+    actions.append(px4_instance(leader.instance_id, leader.x, leader.y, leader.z, leader.yaw_rad))
 
     # t=5s: drones 1,2,3 — attach to running Gazebo
-    follower_positions = [
-        (1, leader_x + behind_dx, leader_y + behind_dy, SPAWN_Z_M),
-        (2, leader_x + 2 * behind_dx, leader_y + 2 * behind_dy, SPAWN_Z_M),
-        (3, leader_x + 3 * behind_dx, leader_y + 3 * behind_dy, SPAWN_Z_M),
-    ]
-    for idx, x, y, z in follower_positions:
+    for pose in poses[1:]:
         actions.append(TimerAction(
             period=5.0,
-            actions=[px4_instance(idx, x, y, z)],
+            actions=[px4_instance(pose.instance_id, pose.x, pose.y, pose.z, pose.yaw_rad)],
         ))
 
     # t=20s: leader mission

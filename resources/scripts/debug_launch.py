@@ -11,6 +11,7 @@ from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+LED_PLUGIN_BUILD_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), "plugins", "led_controller", "build")
 TRAIN_YAW_RAD = 3.7346
 SPAWN_Z_M = 1.4
 TRAIN_SPACING_M = 2.0
@@ -20,9 +21,12 @@ def px4_instance(instance_id, x, y, z, yaw=3.7346):
     # Env vars are set explicitly so Gazebo gets them even in subprocess context
     cmd = f"""
         export DISPLAY=:0
+        export PX4_DIR="${{PX4_DIR:-$HOME/PX4-Autopilot}}"
         export MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA
         export GZ_RENDER_ENGINE=ogre2
-        cd ~/PX4-Autopilot/ &&
+        export GZ_SIM_RESOURCE_PATH="$PX4_DIR/Tools/simulation/gz:$PX4_DIR/Tools/simulation/gz/worlds:$PX4_DIR/Tools/simulation/gz/models:${{GZ_SIM_RESOURCE_PATH:-}}"
+        export GZ_SIM_SYSTEM_PLUGIN_PATH="$PX4_DIR/Tools/simulation/gz/plugins/led_controller/build:{LED_PLUGIN_BUILD_DIR}:$PX4_DIR/build/px4_sitl_default/build_gazebo:${{GZ_SIM_SYSTEM_PLUGIN_PATH:-}}"
+        cd "$PX4_DIR" &&
         PX4_SYS_AUTOSTART=4010 \
         PX4_SIM_MODEL=gz_x500_mono_cam \
         PX4_GZ_WORLD=baylands_custom \

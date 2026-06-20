@@ -18,16 +18,14 @@ shows exactly led_lens_01 + led_lens_04). Otherwise the detector sees the old
 Run via resources/scripts/cv_launch.py (sim + this), or standalone after sim is up.
 """
 import asyncio
+import json
 import math
 import os
 import signal
 import sys
 
 _REPO_ROOT = os.path.join(os.path.dirname(__file__), '..', '..')
-# drone_sdk now lives under examples/ (camera-frame-dedup merge), so put that on the
-# path too — keep the repo root as a fallback for older layouts.
 sys.path.insert(0, _REPO_ROOT)
-sys.path.insert(0, os.path.join(_REPO_ROOT, 'examples'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import rclpy
@@ -43,8 +41,8 @@ from drone_sdk.follower_controller import (
     build_chain_config,
 )
 from drone_sdk.two_led_cv import mask_for_state
-from cv_vision_provider import CVVisionProvider
-from results_logger import ResultsLogger
+from henera_swarm.logging import ResultsLogger
+from henera_swarm.perception import CVVisionProvider
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 
@@ -58,7 +56,9 @@ TAKEOFF_AIRBORNE_FRACTION = 0.6   # on timeout, proceed if at least this fractio
 CONTROL_HZ = 10.0
 BEACON_HZ = 20.0
 TRUTH_LOG_HZ = 1.0
-WATCHDOG_S = 300.0
+# Time cap. Overridable via env because a long converted mission route (e.g.
+# ~240 m) takes far longer than the default short turn pattern.
+WATCHDOG_S = float(os.environ.get('WATCHDOG_S', '300'))
 FINISH_BROADCAST_S = 15.0  # how long the leader blinks FINISH before landing
 FINISH_DESCENT_SPEED_MS = 0.6   # follower descent rate after a confirmed FINISH
 FINISH_DESCENT_TIMEOUT_S = 25.0 # cap on the descent before the follower task exits
@@ -107,7 +107,77 @@ def _build_leader_waypoints():
     return waypoints
 
 
-LEADER_WAYPOINTS = _build_leader_waypoints()
+# Optional: fly a converted mission JSON (e.g. Mission/mission_01.json) instead of
+# the built-in turn pattern. Point LEADER_MISSION_FILE at its path (start_cv.sh
+# exports it) to switch missions without editing this file. The mission's px4_ned
+# offsets are relative to the leader spawn (mission origin == leader spawn), so the
+# full path drops straight into the leader's local NED, flown on top of the
+# COMMON_ALT_M takeoff baseline. LEADER_YAW_MODE picks the heading source:
+#   file    = JSON yaw_deg (default)   path = face each leg   current = spawn yaw
+LEADER_MISSION_FILE = os.environ.get('LEADER_MISSION_FILE', '').strip()
+LEADER_YAW_MODE = os.environ.get('LEADER_YAW_MODE', 'file').strip().lower()
+
+
+def _wrap_degrees(angle_deg):
+    return (angle_deg + 180.0) % 360.0 - 180.0
+
+
+def _select_yaw(prev_ned, wp_ned, file_yaw_deg):
+    if LEADER_YAW_MODE == 'current':
+        return TRAIN_YAW_DEG
+    if LEADER_YAW_MODE == 'path':
+        dn = wp_ned[0] - prev_ned[0]
+        de = wp_ned[1] - prev_ned[1]
+        if abs(dn) < 1e-6 and abs(de) < 1e-6:
+            return _wrap_degrees(file_yaw_deg)
+        return _wrap_degrees(math.degrees(math.atan2(de, dn)))
+    return _wrap_degrees(file_yaw_deg)  # 'file'
+
+
+def _load_mission_waypoints(path):
+    """Convert a mission JSON into the leader's (n, e, d, yaw_deg, hold_s) tuples.
+
+    down_m in the JSON is an offset from waypoint 0, applied on top of the
+    COMMON_ALT_M takeoff baseline. The first tuple is the form-up hover point."""
+    with open(path, 'r', encoding='utf-8') as f:
+        mission = json.load(f)
+    items = mission.get('waypoints', [])
+    raw = []
+    for item in items:
+        ned = item['px4_ned']
+        raw.append((
+            float(ned['north_m']),
+            float(ned['east_m']),
+            -COMMON_ALT_M + float(ned['down_m']),
+            float(item.get('yaw_deg', 0.0)),
+        ))
+    if len(raw) < 2:
+        raise ValueError(f'mission {path} needs at least 2 waypoints')
+
+    waypoints = []
+    prev_ned = raw[0][:3]
+    for idx, (n, e, d, file_yaw) in enumerate(raw):
+        yaw = _select_yaw(prev_ned, (n, e, d), file_yaw)
+        if idx == 0:
+            hold_s = 5          # form-up hover
+        elif idx == len(raw) - 1:
+            hold_s = 10         # settle at the final waypoint
+        else:
+            hold_s = 0          # interpolation is continuous; no per-leg hold
+        waypoints.append((n, e, d, yaw, hold_s))
+        prev_ned = (n, e, d)
+    return waypoints
+
+
+if LEADER_MISSION_FILE:
+    LEADER_WAYPOINTS = _load_mission_waypoints(LEADER_MISSION_FILE)
+    print(f'[cv] leader route loaded from {LEADER_MISSION_FILE} '
+          f'({len(LEADER_WAYPOINTS)} waypoints, baseline alt={COMMON_ALT_M:.0f}m, '
+          f'yaw_mode={LEADER_YAW_MODE})', flush=True)
+else:
+    LEADER_WAYPOINTS = _build_leader_waypoints()
+    print(f'[cv] leader route = built-in turn pattern '
+          f'({len(LEADER_WAYPOINTS)} waypoints)', flush=True)
 
 
 def _state_str(value):
@@ -162,20 +232,34 @@ async def _wait_until_altitude(drone: Drone, target_alt_m: float, timeout_s: flo
     )
 
 
-def _force_search_when_invisible(obs: VisualObservation) -> VisualObservation:
-    if obs.target_visible:
-        return obs
+def _navigation_observation(obs: VisualObservation) -> VisualObservation:
     mission = _state_str(obs.mission_state).upper()
-    if mission in ('FOLLOW', 'FINISH'):
+    if mission in ('FOLLOW', 'SAFE', 'FINISH'):
         return obs
     return VisualObservation(
-        target_visible=False,
+        target_visible=obs.target_visible,
         horizontal_angle_deg=obs.horizontal_angle_deg,
         vertical_angle_deg=obs.vertical_angle_deg,
         target_size=obs.target_size,
         mission_state=MissionState.FOLLOW,
         timestamp=obs.timestamp,
     )
+
+
+def _relay_ready(raw_obs: VisualObservation, command) -> bool:
+    return (
+        raw_obs.target_visible
+        and _state_str(raw_obs.mission_state).upper() == 'FOLLOW'
+        and command.state == FollowerState.FOLLOW
+    )
+
+
+def _beacon_state(raw_obs: VisualObservation, command) -> str:
+    if command.relay_state == MissionState.FINISH:
+        return _state_str(MissionState.FINISH)
+    if command.relay_state == MissionState.SAFE:
+        return _state_str(MissionState.SAFE)
+    return _state_str(MissionState.FOLLOW if _relay_ready(raw_obs, command) else MissionState.HOLD)
 
 
 def _round_or_none(value, digits: int):
@@ -337,12 +421,14 @@ def _chain_acquired(follower_status: dict, follower_ids: list[int]) -> bool:
         return all(
             follower_status.get(fid, {}).get('state') == FollowerState.FOLLOW
             and follower_status.get(fid, {}).get('visible')
+            and follower_status.get(fid, {}).get('relay_ready')
             and _target_size_ready(follower_status.get(fid, {}).get('size'))
             for fid in follower_ids
         )
     return (
         follower_status.get(1, {}).get('state') == FollowerState.FOLLOW
         and follower_status.get(1, {}).get('visible')
+        and follower_status.get(1, {}).get('relay_ready')
         and _target_size_ready(follower_status.get(1, {}).get('size'))
     )
 
@@ -370,9 +456,10 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
         while not stop_event.is_set():
             raw_obs = await provider.observe()
             vision_debug = getattr(provider, 'last_debug', {})
-            obs = _force_search_when_invisible(raw_obs)
+            obs = _navigation_observation(raw_obs)
             cmd = controller.update(obs)
-            beacon_state[0] = _state_str(cmd.relay_state)
+            relay_ready = _relay_ready(raw_obs, cmd)
+            beacon_state[0] = _beacon_state(raw_obs, cmd)
             await actuator.apply(cmd)
             tick += 1
             if obs.target_visible:
@@ -384,6 +471,7 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
                 'mission': obs.mission_state,
                 'visible': obs.target_visible,
                 'size': obs.target_size,
+                'relay_ready': relay_ready,
             }
             current_state = _state_str(cmd.state)
             current_visible = obs.target_visible
@@ -396,7 +484,7 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
                 print(
                     f'[follower {drone_id}] transition '
                     f'state={current_state} mission={current_mission} '
-                    f'raw={_state_str(raw_obs.mission_state)} relay={_state_str(cmd.relay_state)} '
+                    f'raw={_state_str(raw_obs.mission_state)} relay={beacon_state[0]} '
                     f'vis={current_visible} anchor={vision_debug.get("anchor_visible")} '
                     f'signal={vision_debug.get("signal_visible")} '
                     f'sig_ratio={_fmt(vision_debug.get("signal_on_ratio"), 2)} '
@@ -421,7 +509,7 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
                 altitude_m = await _altitude_or_none(actuator.drone)
                 print(f'[follower {drone_id}] state={_state_str(cmd.state)} '
                       f'mission={_state_str(obs.mission_state)} raw={_state_str(raw_obs.mission_state)} '
-                      f'relay={_state_str(cmd.relay_state)} vis={obs.target_visible} '
+                      f'relay={beacon_state[0]} vis={obs.target_visible} '
                       f'anchor={vision_debug.get("anchor_visible")} '
                       f'signal={vision_debug.get("signal_visible")} '
                       f'sig_ratio={_fmt(vision_debug.get("signal_on_ratio"), 2)} '
@@ -442,7 +530,8 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
                 'state': _state_str(cmd.state),
                 'mission': _state_str(obs.mission_state),
                 'raw_mission': _state_str(raw_obs.mission_state),
-                'relay': _state_str(cmd.relay_state),
+                'relay': beacon_state[0],
+                'relay_ready': relay_ready,
                 'visible': obs.target_visible,
                 'raw_visible': raw_obs.target_visible,
                 'anchor_visible': vision_debug.get('anchor_visible'),
@@ -639,6 +728,7 @@ async def main():
                     search_yaw_rate=20.0,
                     kp_forward=0.05,
                     max_forward_speed=1.5,
+                    reacquire_frames=1,
                     lost_timeout=1.0,
                     lost_command_memory_s=0.8,
                 ),
