@@ -12,12 +12,10 @@
       "delay_time": 1.0,
       "loop": false,
       "timeline": [
-        {"mask": "1110", "ticks": 4},
-        {"mask": "0110", "ticks": 4},
         {"mask": "1100", "ticks": 4},
         {"mask": "1000", "ticks": 4},
-        {"mask": "1110", "ticks": 4},
-        {"mask": "1000", "ticks": 4}
+        {"mask": "0100", "ticks": 4},
+        {"mask": "0000", "ticks": 4}
       ]
     }
   }

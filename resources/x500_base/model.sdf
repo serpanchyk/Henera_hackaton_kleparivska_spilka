@@ -587,10 +587,9 @@
           <ixx>0.00001</ixx><iyy>0.00001</iyy><izz>0.00001</izz>
         </inertia>
       </inertial>
-      <!-- LED budget: 2 lenses only (one LED group on the leader, per hackathon rules).
-           Default material is OFF (dark); only the leader actively lights these via
-           the led_controller plugin. Followers never send LED commands, so their
-           lenses stay dark = effectively no LEDs on followers. -->
+      <!-- LED budget: 2 fixed-color lenses only. led_lens_01 is green and
+           led_lens_04 is red when enabled by the led_controller plugin.
+           Default material is OFF (dark). -->
       <visual name="led_lens_01">
         <pose>0  0.05 0  0 0 0</pose>
         <geometry>

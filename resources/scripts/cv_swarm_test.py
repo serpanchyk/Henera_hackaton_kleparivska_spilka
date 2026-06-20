@@ -3,7 +3,7 @@
 Final end-to-end CV test (legal Path B): real optical channel, no ground truth.
 
 Single process owns all 4 MAVSDK connections. The leader (drone 0) flies a
-defined route AND blinks the two-LED optical protocol. Each follower (1,2,3)
+defined route AND publishes the two-LED optical protocol. Each follower (1,2,3)
 runs the real perception+control chain from its OWN camera:
 
     camera -> GreenLedDetector -> decoder -> tracker -> adapter
@@ -13,7 +13,7 @@ Chain: follower 1 tracks leader, 2 tracks 1, 3 tracks 2.
 
 PREREQUISITE: run `bash project_setup.sh` so the 2-lens model is in PX4 (leader
 shows exactly led_lens_01 + led_lens_04). Otherwise the detector sees the old
-4-green model and cannot decode the blink.
+4-green model and cannot decode the protocol.
 
 Run via resources/scripts/cv_launch.py (sim + this), or standalone after sim is up.
 """
@@ -38,7 +38,7 @@ from drone_sdk.follower_controller import (
     VisualObservation,
     build_chain_config,
 )
-from drone_sdk.two_led_cv import signal_on_for_state
+from drone_sdk.two_led_cv import mask_for_state
 from cv_vision_provider import CVVisionProvider
 from results_logger import ResultsLogger
 
@@ -111,10 +111,8 @@ def _state_str(value):
 
 
 def leader_mask(state: str, t: float) -> str:
-    """2-lens mask: index 0 = led_lens_01 (anchor, always on),
-    index 1 = led_lens_04 (signal, per protocol timing). Positions 3/4 unused."""
-    signal_on = signal_on_for_state(state, t)
-    return f"1{'1' if signal_on else '0'}00"
+    """2-lens mask: bit 1 = led_lens_01 green, bit 2 = led_lens_04 red."""
+    return mask_for_state(state, t)
 
 
 # ─── Leader LED beacon ───────────────────────────────────────────────────────
@@ -292,7 +290,7 @@ async def fly_leader(leader: Drone, beacon_state: list, stop_event: asyncio.Even
                      acquisition_event: asyncio.Event, follower_status: dict,
                      follower_ids: list[int]):
     try:
-        # Form-up: hover at the first waypoint blinking FOLLOW so the followers can
+        # Form-up: hover at the first waypoint publishing FOLLOW so the followers can
         # SEARCH, acquire the LED pair, lock FOLLOW, and close to formation distance
         # BEFORE the leader starts moving (otherwise it flies out of camera range).
         first = LEADER_WAYPOINTS[0]

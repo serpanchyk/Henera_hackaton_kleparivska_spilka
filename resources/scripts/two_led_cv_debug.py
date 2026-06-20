@@ -26,6 +26,8 @@ DEFAULT_CAMERA_TOPIC = (
 )
 WINDOW_NAME = 'two_led_cv_debug'
 MASK_WINDOW_NAME = 'two_led_cv_mask'
+RED_RANGES = [((0, 70, 70), (14, 255, 255)), ((166, 70, 70), (180, 255, 255))]
+RED_MIN_AREA = 3.0
 
 
 class FrameSource(Protocol):
@@ -148,10 +150,13 @@ def main() -> int:
                 tracker = TwoLedTracker(frame_width=width, frame_height=height)
 
             now = time.monotonic()
-            blobs = detector.detect(frame)
-            anchor_visible, signal_visible = led_visibility(blobs, tracker)
-            state = decoder.update(anchor_visible=anchor_visible, signal_visible=signal_visible, now=now)
-            observation = tracker.update(blobs, state=state, now=now)
+            green_blobs = detector.detect(frame)
+            red_blob = detect_red_blob(frame)
+            tracker_blobs = blobs_for_tracker(green_blobs, red_blob)
+            green_visible = bool(green_blobs)
+            red_visible = red_blob is not None
+            state = decoder.update(anchor_visible=green_visible, signal_visible=red_visible, now=now)
+            observation = tracker.update(tracker_blobs, state=state, now=now)
             stats = decoder.debug_stats()
 
             if now - last_print_s >= args.print_period:
@@ -160,7 +165,7 @@ def main() -> int:
 
             if args.debug:
                 mask, contours = build_green_mask(frame, detector)
-                debug = draw_overlay(frame, blobs, observation, tracker, stats, contours)
+                debug = draw_overlay(frame, tracker_blobs, observation, tracker, stats, contours)
                 cv2.imshow(WINDOW_NAME, debug)
                 if args.show_mask:
                     cv2.imshow(MASK_WINDOW_NAME, mask)
@@ -222,12 +227,43 @@ def make_source(source: str, force_ros: bool) -> FrameSource:
     return RosImageFrameSource(source)
 
 
-def led_visibility(blobs: list[LedBlob], tracker: TwoLedTracker) -> tuple[bool, bool]:
-    if len(blobs) >= 2 and tracker._select_pair(blobs) is not None:
-        return True, True
-    if len(blobs) == 1:
-        return True, False
-    return False, False
+def blobs_for_tracker(green_blobs: list[LedBlob], red_blob: LedBlob | None) -> list[LedBlob]:
+    blobs: list[LedBlob] = []
+    if green_blobs:
+        blobs.append(green_blobs[0])
+    if red_blob is not None:
+        blobs.append(red_blob)
+    return blobs
+
+
+def detect_red_blob(frame_bgr: np.ndarray) -> LedBlob | None:
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    mask = None
+    for lower, upper in RED_RANGES:
+        color_mask = cv2.inRange(hsv, np.array(lower, np.uint8), np.array(upper, np.uint8))
+        mask = color_mask if mask is None else cv2.bitwise_or(mask, color_mask)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    best: LedBlob | None = None
+    for contour in contours:
+        area = float(cv2.contourArea(contour))
+        if area < RED_MIN_AREA:
+            continue
+        moments = cv2.moments(contour)
+        if moments['m00'] == 0.0:
+            continue
+        candidate = LedBlob(
+            cx=float(moments['m10'] / moments['m00']),
+            cy=float(moments['m01'] / moments['m00']),
+            area=area,
+            confidence=1.0,
+        )
+        if best is None or candidate.area > best.area:
+            best = candidate
+    return best
 
 
 def build_green_mask(frame_bgr: np.ndarray, detector: GreenLedDetector) -> tuple[np.ndarray, list[np.ndarray]]:
@@ -253,7 +289,7 @@ def draw_overlay(
     for index, blob in enumerate(blobs):
         center = point(blob.cx, blob.cy)
         radius = max(3, int(round(math.sqrt(blob.area / math.pi))))
-        color = (0, 255, 0) if index == 0 else (0, 180, 255)
+        color = (0, 255, 0) if index == 0 else (0, 0, 255)
         cv2.circle(debug, center, radius, color, 2)
         cv2.drawMarker(debug, center, color, cv2.MARKER_CROSS, 12, 1)
         cv2.putText(debug, f'{index}:{blob.confidence:.2f}', (center[0] + 6, center[1] - 6),
