@@ -15,10 +15,12 @@
 # backs off gently rather than slamming into reverse). CV tracking degrades at
 # high speed, so raise leader_cruise_m_s gradually.
 speeds:
-  leader_cruise_m_s: 0.6        # was 0.8; followers were saturating fwd=1.44 yet still lagging to ~4.8 m, so the
+  leader_cruise_m_s: 0.35       # was 0.4; followers still could not keep up through turns, so slow the leader further
+                                # while preserving follower catch-up headroom with the ratio below.
+                                # Previously 0.8; followers were saturating fwd=1.44 yet still lagging to ~4.8 m, so the
                                 # leader's hard turns (yaw -109->-142->-91) threw it out of frame -> follower 1 lost it.
                                 # A slower leader gives the chain margin to hold formation through turns.
-  follower_forward_ratio: 2.4   # was 1.8; raised so follower max forward stays =1.44 m/s (0.6*2.4) — full catch-up
+  follower_forward_ratio: 4.1   # was 3.6; keeps follower max forward ~=1.44 m/s (0.35*4.1) — full catch-up
                                 # headroom is preserved even though the leader is slower.
   follower_reverse_ratio: 0.4   # follower max reverse = leader_cruise * this
 
@@ -30,13 +32,15 @@ follower_control:
                                 # them closer with a bigger, more robust blob — still behind the 2.5 m spacing, clear of
                                 # the ~1.7 m wake zone that crashed follower 1 at size 130.
   kp_yaw: 1.0
-  kp_forward: 0.08             # was 0.05; too weak to actually close the gap (followers sat at max fwd yet stayed ~4 m
+  kp_forward: 0.10             # was 0.08; stronger horizontal catch-up so followers close gaps sooner before turns
+                                # push the target out of frame.
+                                # Previously 0.05; too weak to actually close the gap (followers sat at max fwd yet stayed ~4 m
                                 # back). Stronger so they pull up to the 100 px hold instead of trailing out of FOV.
-  kp_vertical: 0.02
+  kp_vertical: 0.01             # was 0.02; damp vertical chase because logs showed followers drifting far above target altitude
   max_yaw_rate: 28.0            # was 22; bear_err hit ~19 deg on the leader's turns and yaw lagged, letting the leader
                                 # slide out of frame. A bit faster keeps it centered through turns (still gentle enough
                                 # to avoid the spin-on-relock crash).
-  max_vertical_speed: 0.4       # m/s; cap the dives + slow the sink when chasing a target that drifted low
+  max_vertical_speed: 0.2       # m/s; cap climb/dive so camera geometry does not drift away from the 2.5 m route
   yaw_dead_zone_deg: 1.0
   vertical_dead_zone_deg: 1.0
   size_dead_zone: 5.0           # px; ignore size error smaller than this
@@ -46,10 +50,10 @@ follower_control:
   lost_frames_threshold: 5      # was 3; tolerate a longer detection gap through a turn before declaring the target lost
   reacquire_frames: 2           # was 3; resume FOLLOW after 2 good frames — fast enough to keep up, but >1 so a
                                 # single stray blob during SEARCH can't lock the wrong drone (-> spin/crash)
-  smoothing_alpha: 0.5          # some damping for stability, but less sluggish than 0.55 so forward tracks the leader
+  smoothing_alpha: 0.35         # was 0.5; less lag so forward/yaw commands react sooner to target motion
   search_yaw_rate: 10.0         # legacy; superseded by the scan sweep below
   search_yaw_sweep_deg: 30.0    # half-angle of the bounded SEARCH yaw sweep
-  search_vertical_speed: 0.3    # was 0.5; less altitude drift while scanning (kept the chain from diverging in z)
+  search_vertical_speed: 0.1    # was 0.3; minimize altitude drift while scanning for the optical target
   search_period_s: 8.0          # s for one full SEARCH sweep cycle
   control_rate_hz: 10.0
   yaw_sign: 1.0
@@ -73,7 +77,7 @@ formation:
 # ── Mission runtime: rates, settle/timeout durations, FINISH/recovery timing ─
 runtime:
   follower_count: 3
-  common_alt_m: 10.0            # leader/cruise altitude
+  common_alt_m: 2.5             # leader/cruise altitude
   ekf_settle_s: 15.0
   hover_settle_s: 8.0
   takeoff_timeout_s: 35.0
@@ -87,8 +91,8 @@ runtime:
   finish_descent_speed_ms: 0.6
   finish_descent_timeout_s: 25.0
   finish_ground_alt_m: 1.2
-  acquire_hold_s: 30.0          # leader hovers first so followers form up
-  route_recovery_pause_s: 20.0
+  acquire_hold_s: 45.0          # leader hovers first so followers form up
+  route_recovery_pause_s: 30.0
   route_recovery_poll_s: 0.5
   step_m: 1.0                   # leader route step size
 

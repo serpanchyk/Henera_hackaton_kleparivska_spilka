@@ -23,8 +23,13 @@ if [[ ! -d "$PX4_MODELS/x500_base" || ! -d "$PX4_MODELS/x500_mono_cam" || ! -d "
     exit 1
 fi
 
-echo "copying Gazebo world..."
-cp -r "$SRC/worlds/media" "$SRC/worlds/baylands_custom.config" "$SRC/worlds/baylands_custom.sdf" "$PX4_WORLDS/"
+echo "copying Gazebo world (baylands_custom + media: meshes/textures)..."
+# Remove any previously deployed media first so a re-run does not nest
+# media/media (cp -r of an existing dir copies INTO it), which would break the
+# model://media/meshes/... URIs in baylands_custom.sdf.
+rm -rf "$PX4_WORLDS/media"
+cp -r "$SRC/worlds/media" "$PX4_WORLDS/"
+cp "$SRC/worlds/baylands_custom.config" "$SRC/worlds/baylands_custom.sdf" "$PX4_WORLDS/"
 
 echo "copying Gazebo x500 model..."
 cp "$SRC/x500_base/model.sdf" "$PX4_MODELS/x500_base/"

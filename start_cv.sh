@@ -67,13 +67,13 @@ sleep 3
 # Pick a mission by its FOLDER NAME under resources/scripts/missions/. The CV
 # path flies a converted waypoint JSON, so the chosen folder must contain one
 # (default file: mission_01.json). Change the mission without editing Python:
-#   bash start_cv.sh                          # default folder: waypoints_json
-#   bash start_cv.sh waypoints_json           # pick a mission folder by name
-#   bash start_cv.sh waypoints_json m2.json   # folder + a specific JSON file
+#   bash start_cv.sh                          # default: mission_final/mission_02.json
+#   bash start_cv.sh mission_final            # pick a mission folder by name
+#   bash start_cv.sh mission_final mission_01.json   # folder + a specific JSON file
 #   MISSION_FILE=/abs/path.json bash start_cv.sh   # bypass with an explicit path
 MISSIONS_DIR="$REPO/resources/scripts/missions"
-MISSION_NAME="${1:-${MISSION:-waypoints_json}}"
-MISSION_JSON="${2:-mission_01.json}"
+MISSION_NAME="${1:-${MISSION:-mission_final}}"
+MISSION_JSON="${2:-mission_02.json}"
 
 if [ -n "$MISSION_FILE" ]; then
     : # explicit MISSION_FILE env override wins — use as-is

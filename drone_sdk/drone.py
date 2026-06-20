@@ -133,10 +133,11 @@ class Drone:
         except Exception as e:
             raise MAVSDKError(f'Failed to disarm drone {self.drone_id}: {e}')
 
-    async def takeoff(self, altitude_m: float = 10.0) -> None:
+    async def takeoff(self, altitude_m: Optional[float] = None) -> None:
         self._require_connected()
         try:
-            await self._sys.action.set_takeoff_altitude(altitude_m)
+            if altitude_m is not None:
+                await self._sys.action.set_takeoff_altitude(altitude_m)
             await self._sys.action.takeoff()
         except Exception as e:
             raise MAVSDKError(f'Takeoff failed for drone {self.drone_id}: {e}')

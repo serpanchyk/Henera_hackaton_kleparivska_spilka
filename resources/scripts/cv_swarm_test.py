@@ -713,9 +713,9 @@ async def main():
 
     try:
         async def arm_takeoff(i, d):
-            await d.arm()
             await d.set_takeoff_altitude(COMMON_ALT_M)
-            await d.takeoff()
+            await d.arm()
+            await d.takeoff(COMMON_ALT_M)
 
         print(f'[main] arming and taking off to {COMMON_ALT_M:.1f}m...')
         # Resilient launch: a drone that fails to arm/take off (e.g. spawned tilted ->

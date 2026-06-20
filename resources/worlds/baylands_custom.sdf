@@ -479,14 +479,62 @@
         </geometry>
       </collision>
     </link>
+  </model>
     
-    </model>
-    <model name="start">
-      <static>true</static>
-      <link name="start">
-      <visual name="visual_start">
+  <model name="start">
+    <static>true</static>
+    <link name="start">
+    <visual name="visual_start">
+      <geometry>
+        <mesh><uri>model://media/meshes/baylands_start.glb</uri></mesh>
+      </geometry>
+      <material>
+        <ambient>1 1 1 1</ambient>
+        <diffuse>1 1 1 1</diffuse>
+        <specular>0.1 0.1 0.1 1</specular>
+        <pbr>
+          <metal>
+              <albedo_map>model://media/textures/Start.png</albedo_map>
+          </metal>
+        </pbr>
+      </material>
+    </visual>
+    <collision name="collision_water">
+      <geometry>
+        <mesh><uri>model://media/meshes/baylands_start.glb</uri></mesh>
+      </geometry>
+    </collision>
+  </link>
+  </model>
+
+  <model name="start_pad_ext">
+    <static>true</static>
+    <pose>132.4 56.3 1.13 0 0 0.5934</pose>
+    <link name="pad">
+      <visual name="pad_visual">
         <geometry>
-          <mesh><uri>model://media/meshes/baylands_start.glb</uri></mesh>
+          <box><size>7 5 0.5</size></box>
+        </geometry>
+        <material>
+          <ambient>0.25 0.25 0.28 1</ambient>
+          <diffuse>0.35 0.35 0.40 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
+        </material>
+      </visual>
+      <collision name="pad_collision">
+        <geometry>
+          <box><size>7 5 0.5</size></box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+
+    <model name="column">
+      <static>true</static>
+      <link name="column">
+      <visual name="visual_column">
+        <geometry>
+          <mesh><uri>model://media/meshes/baylands_column.glb</uri></mesh>
         </geometry>
         <material>
           <ambient>1 1 1 1</ambient>
@@ -494,46 +542,44 @@
           <specular>0.1 0.1 0.1 1</specular>
           <pbr>
             <metal>
-                <albedo_map>model://media/textures/Start.png</albedo_map>
+                <albedo_map>model://media/textures/Column1.png</albedo_map>
             </metal>
           </pbr>
         </material>
       </visual>
       <collision name="collision_water">
         <geometry>
-          <mesh><uri>model://media/meshes/baylands_start.glb</uri></mesh>
+          <mesh><uri>model://media/meshes/baylands_column.glb</uri></mesh>
         </geometry>
       </collision>
     </link>
     </model>
 
-    <!-- Extended takeoff pad. The baked "start" mesh above is short: with the spawn
-         train compressed, the rearmost follower can land off its back edge over lower
-         terrain/water and tip ("Attitude failure (pitch)" -> arming denied). This flat
-         rigid slab spans the whole spawn line (oriented along the train yaw 3.7346 rad)
-         so every drone sits level. Tunables: <pose> z is the slab TOP minus half its
-         thickness (top ~= drone spawn z 1.4); the first <size> value is its length.
-         NOTE: re-run `bash project_setup.sh` after editing so PX4 picks up the change. -->
-    <model name="start_pad_ext">
+    <model name="hangar">
       <static>true</static>
-      <pose>132.4 56.3 1.13 0 0 0.5934</pose>
-      <link name="pad">
-        <visual name="pad_visual">
-          <geometry>
-            <box><size>20 6 0.5</size></box>
-          </geometry>
-          <material>
-            <ambient>0.25 0.25 0.28 1</ambient>
-            <diffuse>0.35 0.35 0.40 1</diffuse>
-            <specular>0.1 0.1 0.1 1</specular>
-          </material>
-        </visual>
-        <collision name="pad_collision">
-          <geometry>
-            <box><size>20 6 0.5</size></box>
-          </geometry>
-        </collision>
-      </link>
+      <link name="start">
+      <visual name="visual_hangar">
+        <geometry>
+          <mesh><uri>model://media/meshes/baylands_hangar.glb</uri></mesh>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
+          <pbr>
+            <metal>
+                <albedo_map>model://media/textures/Texturelabs_Brick_141S.jpg</albedo_map>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+      <collision name="collision_water">
+        <geometry>
+          <mesh><uri>model://media/meshes/baylands_hangar.glb</uri></mesh>
+        </geometry>
+      </collision>
+    </link>
     </model>
+
   </world>
 </sdf>

@@ -176,9 +176,10 @@ async def main():
     try:
         # Arm + takeoff with altitude stagger to avoid collisions on climb.
         async def arm_takeoff(i, d):
+            takeoff_alt_m = COMMON_ALT_M + i * 1.0
+            await d.set_takeoff_altitude(takeoff_alt_m)
             await d.arm()
-            await d.set_takeoff_altitude(COMMON_ALT_M + i * 1.0)
-            await d.takeoff()
+            await d.takeoff(takeoff_alt_m)
 
         print('[main] arming and taking off (staggered altitudes)...')
         await asyncio.gather(*(arm_takeoff(i, d) for i, d in drones.items()))
