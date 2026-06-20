@@ -1,0 +1,2 @@
+# ROS Humble cv_bridge on Ubuntu 22.04 is compiled against NumPy 1.x.
+numpy==1.21.5

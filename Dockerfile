@@ -23,6 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         locales \
         software-properties-common \
         tzdata \
+        unzip \
+        zip \
     && locale-gen en_US.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -37,11 +39,14 @@ RUN curl -fsSL https://packages.osrfoundation.org/gazebo.gpg \
         > /etc/apt/sources.list.d/gazebo-stable.list
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        bc \
         build-essential \
         ccache \
         cmake \
+        file \
         ninja-build \
         pkg-config \
+        protobuf-compiler \
         python3-dev \
         python3-empy \
         python3-jinja2 \
@@ -52,28 +57,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-setuptools \
         python3-toml \
         python3-yaml \
+        rsync \
         ros-humble-cv-bridge \
         ros-humble-desktop \
         ros-humble-ros-gz-bridge \
         ros-humble-ros-gz-image \
         ros-humble-vision-opencv \
         gz-harmonic \
+        libeigen3-dev \
         libgz-plugin2-dev \
+        libxml2-dev \
+        libxml2-utils \
         libgz-sim8-dev \
     && rm -rf /var/lib/apt/lists/*
+
+COPY docker/px4-constraints.txt /tmp/px4-constraints.txt
 
 RUN git clone --recursive --branch "${PX4_VERSION}" \
         https://github.com/PX4/PX4-Autopilot.git "${PX4_DIR}" \
     && cd "${PX4_DIR}" \
     && git submodule sync --recursive \
     && git submodule update --init --recursive \
-    && make px4_sitl gz_x500
+    && python3 -m pip install --no-cache-dir --constraint /tmp/px4-constraints.txt -r Tools/setup/requirements.txt \
+    && cmake -S . -B build/px4_sitl_default -GNinja -DCONFIG=px4_sitl_default \
+    && cmake --build build/px4_sitl_default --parallel
 
 WORKDIR ${FALCON_GAZE_DIR}
 
-COPY requirements.txt pyproject.toml ./
+COPY requirements.txt ./
 RUN python3 -m pip install --no-cache-dir --upgrade pip \
-    && python3 -m pip install --no-cache-dir -r requirements.txt
+    && python3 -m pip install --no-cache-dir -r requirements.txt \
+    && source /opt/ros/humble/setup.bash \
+    && python3 -c "import mavsdk, numpy, cv2, rclpy; from cv_bridge import CvBridge; print('Python and ROS CV imports OK')"
 
 COPY . ${FALCON_GAZE_DIR}
 
@@ -81,7 +96,8 @@ RUN chmod +x start_cv.sh project_setup.sh resources/scripts/px4_gz_setup.sh \
     && ./project_setup.sh \
     && cmake -S "${PX4_DIR}/Tools/simulation/gz/plugins/led_controller" \
              -B "${PX4_DIR}/Tools/simulation/gz/plugins/led_controller/build" \
-    && cmake --build "${PX4_DIR}/Tools/simulation/gz/plugins/led_controller/build" --parallel
+    && cmake --build "${PX4_DIR}/Tools/simulation/gz/plugins/led_controller/build" --parallel \
+    && test -f "${PX4_DIR}/Tools/simulation/gz/plugins/led_controller/build/libLedController.so"
 
 COPY docker/entrypoint.sh /usr/local/bin/falcon-gaze-entrypoint
 RUN chmod +x /usr/local/bin/falcon-gaze-entrypoint
