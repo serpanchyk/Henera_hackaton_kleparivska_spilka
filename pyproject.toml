@@ -1,10 +1,9 @@
 [project]
 name = "falcon-gaze-release"
 version = "0.1.0"
-description = "Add your description here"
+description = "Optical leader-follower drone swarm simulation"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10,<3.11"
 dependencies = [
-    "numpy",
-    "opencv-python",
+    "mavsdk==3.15.3",
 ]

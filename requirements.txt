@@ -1,0 +1,4 @@
+# PyPI-only runtime dependency.
+# NumPy/OpenCV are installed through apt in the ROS Humble Docker image so
+# cv_bridge remains ABI-compatible with the system Python packages.
+mavsdk==3.15.3
