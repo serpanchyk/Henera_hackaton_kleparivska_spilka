@@ -1,9 +1,32 @@
 import asyncio
 import math
+import sys
 import time
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Awaitable, Callable, Iterable, Optional
+
+try:
+    from .swarm_speeds import (
+        FOLLOWER_MAX_FORWARD_SPEED_M_S,
+        FOLLOWER_MAX_REVERSE_SPEED_M_S,
+        LEADER_CRUISE_SPEED_M_S,
+        follower_forward_for,
+        follower_reverse_for,
+    )
+except ImportError:
+    # Loaded standalone (e.g. the unit tests import this file by path, without
+    # the drone_sdk package). swarm_speeds.py is dependency-free, so pull it
+    # from the same directory.
+    import os as _os
+    sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    from swarm_speeds import (
+        FOLLOWER_MAX_FORWARD_SPEED_M_S,
+        FOLLOWER_MAX_REVERSE_SPEED_M_S,
+        LEADER_CRUISE_SPEED_M_S,
+        follower_forward_for,
+        follower_reverse_for,
+    )
 
 
 class MissionState(str, Enum):
@@ -42,7 +65,13 @@ class FollowerControllerConfig:
     kp_forward: float = 0.02
     kp_vertical: float = 0.02
     max_yaw_rate: float = 30.0
-    max_forward_speed: float = 3.0
+    # Forward/reverse caps default to the shared swarm profile (matched to the
+    # leader cruise) so a follower never dramatically outruns the leader.
+    # Reverse is capped well below forward: when a follower gets too close it
+    # eases back gently instead of slamming into reverse (which, in a chain,
+    # would drive it into the trailing follower).
+    max_forward_speed: float = FOLLOWER_MAX_FORWARD_SPEED_M_S
+    max_reverse_speed: float = FOLLOWER_MAX_REVERSE_SPEED_M_S
     max_vertical_speed: float = 1.0
     yaw_dead_zone_deg: float = 1.0
     vertical_dead_zone_deg: float = 1.0
@@ -64,6 +93,26 @@ class FollowerControllerConfig:
     yaw_sign: float = 1.0
     vertical_sign: float = 1.0
     lost_command_memory_s: float = 0.0
+
+    @classmethod
+    def matched(
+        cls,
+        leader_cruise_m_s: float = LEADER_CRUISE_SPEED_M_S,
+        **overrides,
+    ) -> 'FollowerControllerConfig':
+        """Build a config whose speed caps are matched to the leader's cruise.
+
+        This is the canonical way for swarm scripts to size follower speed:
+        pass the same leader cruise the leader is flying and the forward/reverse
+        caps follow automatically, so the two can never drift into the
+        crowd-and-reverse mismatch. Any field can still be overridden by keyword.
+        """
+        base = dict(
+            max_forward_speed=follower_forward_for(leader_cruise_m_s),
+            max_reverse_speed=follower_reverse_for(leader_cruise_m_s),
+        )
+        base.update(overrides)
+        return cls(**base)
 
     @classmethod
     def stable(cls) -> 'FollowerControllerConfig':
@@ -305,8 +354,15 @@ class FollowerController:
         if abs(size_error) >= self.config.size_dead_zone:
             forward = self.config.kp_forward * size_error
 
+        # Asymmetric clamp: approach up to max_forward_speed, but when the target
+        # looks too big (size_error < 0 -> too close) back off only at the much
+        # smaller max_reverse_speed. A symmetric clamp let a crowded follower
+        # reverse at full speed, which produced the dangerous fly-back into the
+        # trailing drone.
+        forward = self._clamp_forward(forward)
+
         command = FollowerCommand(
-            forward_m_s=self._clamp(forward, self.config.max_forward_speed),
+            forward_m_s=forward,
             right_m_s=0.0,
             down_m_s=self._clamp(down, self.config.max_vertical_speed),
             yaw_rate_deg_s=self._clamp(yaw_rate, self.config.max_yaw_rate),
@@ -438,6 +494,16 @@ class FollowerController:
         if limit == 0.0:
             return 0.0
         return max(-limit, min(limit, value))
+
+    def _clamp_forward(self, value: float) -> float:
+        """Clamp forward velocity asymmetrically: full speed forward, gentle reverse.
+
+        Positive = approach (capped at max_forward_speed); negative = back off
+        because the target is too close (capped at the smaller max_reverse_speed).
+        """
+        if value >= 0.0:
+            return min(value, abs(self.config.max_forward_speed))
+        return max(value, -abs(self.config.max_reverse_speed))
 
     @staticmethod
     def _finite_field(

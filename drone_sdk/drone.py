@@ -263,6 +263,13 @@ class Drone:
         async for hdg in self._sys.telemetry.heading():
             return hdg.heading_deg
 
+    async def is_armed(self) -> bool:
+        """Latest armed state. False once the drone disarms (lands/crashes/kill)."""
+        self._require_connected()
+        async for armed in self._sys.telemetry.armed():
+            return armed
+        return False
+
     # ── LED control ─────────────────────────────────────────────────
 
     def set_leds(self, mask: str) -> None:

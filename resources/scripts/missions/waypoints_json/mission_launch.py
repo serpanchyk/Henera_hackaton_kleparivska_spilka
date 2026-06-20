@@ -2,17 +2,24 @@ import argparse
 import asyncio
 import json
 import math
+import os
+import sys
 from pathlib import Path
 
 from mavsdk import System
 from mavsdk.offboard import OffboardError, PositionNedYaw
+
+# Repo root on the path so the leader speed comes from the shared swarm profile
+# (drone_sdk/swarm_speeds.py) instead of a duplicated local constant.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+from drone_sdk.swarm_speeds import LEADER_CRUISE_SPEED_M_S
 
 
 DEFAULT_WAYPOINT_FILE = Path("px4_mavsdk_waypoints.json")
 DEFAULT_CONNECTION = "udpin://0.0.0.0:14540"
 TAKEOFF_ALT_M = 1.0
 LOOP_RATE_HZ = 10.0
-DESIRED_SPEED_MPS = 4.0
+DESIRED_SPEED_MPS = LEADER_CRUISE_SPEED_M_S
 FINAL_HOLD_SECONDS = 5.0
 
 

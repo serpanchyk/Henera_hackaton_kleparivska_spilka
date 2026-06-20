@@ -40,6 +40,7 @@ from drone_sdk.follower_controller import (
     VisualObservation,
     build_chain_config,
 )
+from drone_sdk.swarm_speeds import LEADER_CRUISE_SPEED_M_S, step_sleep_s
 from drone_sdk.two_led_cv import mask_for_state
 from henera_swarm.logging import ResultsLogger
 from henera_swarm.perception import CVVisionProvider
@@ -68,7 +69,9 @@ REQUIRE_ALL_FOLLOWERS_ACQUIRED = True
 ROUTE_RECOVERY_PAUSE_S = 20.0
 ROUTE_RECOVERY_POLL_S = 0.5
 STEP_M = 1.0               # leader route step size
-STEP_SLEEP_S = 2.5         # sleep per step -> leader cruise ~0.4 m/s while CV is noisy
+# Leader cruise speed is the single shared knob (drone_sdk/swarm_speeds.py);
+# the per-step sleep is derived from it so leader and followers stay matched.
+STEP_SLEEP_S = step_sleep_s(STEP_M)   # = STEP_M / LEADER_CRUISE_SPEED_M_S
 TRAIN_YAW_RAD = 3.7346
 TRAIN_YAW_DEG = math.degrees(TRAIN_YAW_RAD)
 # Multi-leg route: fly LEG_M, turn TURN_DEG, repeat NUM_LEGS times.
@@ -454,6 +457,13 @@ async def run_one_follower(controller, provider, actuator, logger, drone_id,
     finish_since = None
     try:
         while not stop_event.is_set():
+            # If the drone has dropped out of flight (disarmed by a crash, kill,
+            # or landing), stop streaming offboard setpoints to it — otherwise
+            # MAVSDK floods the log with "Sending message failed" for a target
+            # that can no longer accept commands.
+            if tick > 0 and tick % int(CONTROL_HZ) == 0 and not await actuator.drone.is_armed():
+                print(f'[follower {drone_id}] disarmed — stopping control loop', flush=True)
+                break
             raw_obs = await provider.observe()
             vision_debug = getattr(provider, 'last_debug', {})
             obs = _navigation_observation(raw_obs)
@@ -771,11 +781,14 @@ async def main():
             fid = link.drone_id
             controller = FollowerController(
                 link.follower_id, link.target_id,
-                FollowerControllerConfig(
+                # Speeds matched to the leader cruise (forward/reverse caps are
+                # derived from LEADER_CRUISE_SPEED_M_S), so followers can close a
+                # gap without overrunning the leader and slamming into reverse.
+                FollowerControllerConfig.matched(
+                    LEADER_CRUISE_SPEED_M_S,
                     control_rate_hz=CONTROL_HZ,
                     search_yaw_rate=20.0,
                     kp_forward=0.05,
-                    max_forward_speed=1.5,
                     reacquire_frames=1,
                     lost_timeout=1.0,
                     lost_command_memory_s=0.8,

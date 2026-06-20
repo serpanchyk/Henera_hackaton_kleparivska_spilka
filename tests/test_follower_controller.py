@@ -423,6 +423,38 @@ class ProfileAndActuatorTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(abs(cmd.down_m_s), c.config.max_vertical_speed)
         self.assertLessEqual(abs(cmd.forward_m_s), c.config.max_forward_speed)
 
+    def test_too_close_backs_off_only_at_reverse_speed(self):
+        # Target much bigger than desired -> too close -> must back off, but only
+        # at the (smaller) reverse cap, never at full forward speed. This is the
+        # fix for the dangerous full-speed fly-back into the trailing drone.
+        c = FollowerController(
+            'follower_1', 'leader',
+            config(max_forward_speed=3.0, max_reverse_speed=0.5),
+        )
+        cmd = c.update(obs(h=0.0, v=0.0, size=10_000.0), current_time=0.0)
+        self.assertLess(cmd.forward_m_s, 0.0)  # backing off
+        self.assertGreaterEqual(cmd.forward_m_s, -0.5)  # clamped to reverse cap
+        self.assertLess(abs(cmd.forward_m_s), 3.0)  # never full forward magnitude
+
+    def test_approach_still_uses_full_forward_speed(self):
+        # Far target (small size) -> approach is clamped to max_forward_speed,
+        # unaffected by the smaller reverse cap.
+        c = FollowerController(
+            'follower_1', 'leader',
+            config(max_forward_speed=3.0, max_reverse_speed=0.5),
+        )
+        cmd = c.update(obs(h=0.0, v=0.0, size=0.0), current_time=0.0)
+        self.assertEqual(cmd.forward_m_s, 3.0)
+
+    def test_matched_config_ties_follower_speeds_to_leader_cruise(self):
+        cfg = FollowerControllerConfig.matched(2.0)
+        # Forward > leader cruise (can close a gap) but not a runaway multiple;
+        # reverse strictly below forward (gentle back-off).
+        self.assertGreater(cfg.max_forward_speed, 2.0)
+        self.assertLess(cfg.max_reverse_speed, cfg.max_forward_speed)
+        # Overrides still apply on top of the matched speeds.
+        self.assertEqual(FollowerControllerConfig.matched(2.0, kp_forward=0.09).kp_forward, 0.09)
+
     def test_hold_and_finish_remain_immediate_zero_commands(self):
         hold = FollowerController('follower_1', 'leader', FollowerControllerConfig.responsive()).update(
             obs(h=1000.0, v=1000.0, size=0.0, state=MissionState.HOLD),

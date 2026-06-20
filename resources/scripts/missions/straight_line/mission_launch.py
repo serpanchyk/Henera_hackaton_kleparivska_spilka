@@ -1,16 +1,22 @@
 import asyncio
 import math
+import os
+import sys
+
 from mavsdk import System
 from mavsdk.offboard import PositionNedYaw, OffboardError
+
+# Repo root on the path so the shared swarm speed profile is the single source
+# of truth (drone_sdk/swarm_speeds.py) rather than a duplicated local constant.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+from drone_sdk.swarm_speeds import LEADER_CRUISE_SPEED_M_S
 
 # --- Configuration Constants ---
 TAKEOFF_ALT_M = 1.0     # Take off exactly 1 meter above the platform
 STRAIGHT_DISTANCE_M = 12.0
-# Matched to follower max_forward_speed (FollowerControllerConfig) so the
-# leader and the camera-only followers move at the same, faster pace.
-LEADER_CRUISE_SPEED_M_S = 3.0
-# 12 m at 3 m/s ≈ 4 s of travel; allow margin for accel/decel + settle.
-STRAIGHT_FLIGHT_S = 8
+# Leader cruise speed comes from the shared profile so it stays matched to the
+# follower chase speed. Allow generous travel time so the leg always completes.
+STRAIGHT_FLIGHT_S = max(7, math.ceil(STRAIGHT_DISTANCE_M / LEADER_CRUISE_SPEED_M_S) + 4)
 FINAL_HOVER_S = 5
 
 async def run():

@@ -27,6 +27,14 @@ from .follower_controller import (
     safe_stop_all,
     run_follower_controller,
 )
+from .swarm_speeds import (
+    LEADER_CRUISE_SPEED_M_S,
+    FOLLOWER_MAX_FORWARD_SPEED_M_S,
+    FOLLOWER_MAX_REVERSE_SPEED_M_S,
+    follower_forward_for,
+    follower_reverse_for,
+    step_sleep_s,
+)
 from .swarm_startup import (
     StartupError,
     StartupState,
@@ -86,6 +94,12 @@ __all__ = [
     'AlignmentStatus',
     'StartupState',
     'StartupError',
+    'LEADER_CRUISE_SPEED_M_S',
+    'FOLLOWER_MAX_FORWARD_SPEED_M_S',
+    'FOLLOWER_MAX_REVERSE_SPEED_M_S',
+    'follower_forward_for',
+    'follower_reverse_for',
+    'step_sleep_s',
 ]
 
 
