@@ -15,13 +15,14 @@ except ModuleNotFoundError as exc:
     VelocityNedYaw = None
     _RUNTIME_IMPORT_ERROR = exc
 
+from .config import CONFIG
 from .exceptions import ConnectionError, TimeoutError, MAVSDKError
 from .bridges import BridgeManager
 from .ros_node import DroneROSNode
 
 
-MAVSDK_UDP_PORT_BASE = 14540
-MAVSDK_GRPC_PORT_BASE = 50051
+MAVSDK_UDP_PORT_BASE = CONFIG.ports.mavsdk_udp_base
+MAVSDK_GRPC_PORT_BASE = CONFIG.ports.mavsdk_grpc_base
 CONNECT_TIMEOUT = 20.0
 
 

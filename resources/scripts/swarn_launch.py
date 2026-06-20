@@ -1,14 +1,26 @@
 import math
 import os
+import sys
 
-from launch import LaunchDescription    
+from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 LED_PLUGIN_BUILD_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), "plugins", "led_controller", "build")
-TRAIN_YAW_RAD = 3.7346
-SPAWN_Z_M = 1.4
-TRAIN_SPACING_M = 1.5
+
+# Read the swarm size and train formation from the central config so the number
+# of drones SPAWNED here stays in sync with the number the control script
+# CONNECTS to (config.yaml runtime.follower_count). Without this they drift:
+# bumping follower_count alone makes the controller wait on drones that were
+# never launched.
+_REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
+sys.path.insert(0, _REPO_ROOT)
+from drone_sdk.config import CONFIG
+
+FOLLOWER_COUNT = CONFIG.runtime.follower_count
+TRAIN_YAW_RAD = CONFIG.formation.train_yaw_rad
+SPAWN_Z_M = CONFIG.formation.spawn_z_m
+TRAIN_SPACING_M = CONFIG.formation.train_spacing_m
 
 def leader_instanse(x, y, z, yaw=3.7346):
         cmd = f"""
@@ -71,11 +83,17 @@ def generate_launch_description():
                         TRAIN_YAW_RAD
                     )
         )
-        # Followers
+        # Followers — generated from FOLLOWER_COUNT (config.yaml) so the swarm
+        # size is set in one place. Each follower sits one TRAIN_SPACING_M step
+        # further behind the leader along the train yaw.
         followers = [
-                (1, leader_x + behind_dx, leader_y + behind_dy, SPAWN_Z_M),
-                (2, leader_x + 2 * behind_dx, leader_y + 2 * behind_dy, SPAWN_Z_M),
-                (3, leader_x + 3 * behind_dx, leader_y + 3 * behind_dy, SPAWN_Z_M)
+                (
+                        idx,
+                        leader_x + idx * behind_dx,
+                        leader_y + idx * behind_dy,
+                        SPAWN_Z_M,
+                )
+                for idx in range(1, FOLLOWER_COUNT + 1)
         ]
 
         #Delay followers so Gazebo is ready

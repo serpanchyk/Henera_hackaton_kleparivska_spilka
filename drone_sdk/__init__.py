@@ -27,6 +27,7 @@ from .follower_controller import (
     safe_stop_all,
     run_follower_controller,
 )
+from .config import CONFIG, Config, load_config, DEFAULT_CONFIG_PATH
 from .swarm_speeds import (
     LEADER_CRUISE_SPEED_M_S,
     FOLLOWER_MAX_FORWARD_SPEED_M_S,
@@ -94,6 +95,10 @@ __all__ = [
     'AlignmentStatus',
     'StartupState',
     'StartupError',
+    'CONFIG',
+    'Config',
+    'load_config',
+    'DEFAULT_CONFIG_PATH',
     'LEADER_CRUISE_SPEED_M_S',
     'FOLLOWER_MAX_FORWARD_SPEED_M_S',
     'FOLLOWER_MAX_REVERSE_SPEED_M_S',

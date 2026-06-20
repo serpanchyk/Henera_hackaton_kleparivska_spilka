@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Awaitable, Callable, Iterable, Optional
 
 try:
+    from .config import CONFIG
     from .swarm_speeds import (
         FOLLOWER_MAX_FORWARD_SPEED_M_S,
         FOLLOWER_MAX_REVERSE_SPEED_M_S,
@@ -16,10 +17,11 @@ try:
     )
 except ImportError:
     # Loaded standalone (e.g. the unit tests import this file by path, without
-    # the drone_sdk package). swarm_speeds.py is dependency-free, so pull it
-    # from the same directory.
+    # the drone_sdk package). config.py / swarm_speeds.py are dependency-light,
+    # so pull them from the same directory.
     import os as _os
     sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    from config import CONFIG
     from swarm_speeds import (
         FOLLOWER_MAX_FORWARD_SPEED_M_S,
         FOLLOWER_MAX_REVERSE_SPEED_M_S,
@@ -27,6 +29,8 @@ except ImportError:
         follower_forward_for,
         follower_reverse_for,
     )
+
+_FC = CONFIG.follower_control
 
 
 class MissionState(str, Enum):
@@ -60,39 +64,39 @@ class VisualObservation:
 
 @dataclass(frozen=True)
 class FollowerControllerConfig:
-    desired_target_size: float = 110.0
-    kp_yaw: float = 1.0
-    kp_forward: float = 0.02
-    kp_vertical: float = 0.02
-    max_yaw_rate: float = 30.0
-    # Forward/reverse caps default to the shared swarm profile (matched to the
-    # leader cruise) so a follower never dramatically outruns the leader.
-    # Reverse is capped well below forward: when a follower gets too close it
-    # eases back gently instead of slamming into reverse (which, in a chain,
-    # would drive it into the trailing follower).
+    # Defaults are sourced from config.yaml (the `follower_control` section) so
+    # there is a single place to retune the controller. Forward/reverse caps
+    # come from the `speeds` section (matched to the leader cruise) so a
+    # follower never dramatically outruns the leader and, when it gets too
+    # close, eases back gently instead of slamming into the trailing follower.
+    desired_target_size: float = _FC.desired_target_size
+    kp_yaw: float = _FC.kp_yaw
+    kp_forward: float = _FC.kp_forward
+    kp_vertical: float = _FC.kp_vertical
+    max_yaw_rate: float = _FC.max_yaw_rate
     max_forward_speed: float = FOLLOWER_MAX_FORWARD_SPEED_M_S
     max_reverse_speed: float = FOLLOWER_MAX_REVERSE_SPEED_M_S
-    max_vertical_speed: float = 1.0
-    yaw_dead_zone_deg: float = 1.0
-    vertical_dead_zone_deg: float = 1.0
-    size_dead_zone: float = 5.0
-    lost_timeout: float = 2.0
-    observation_timeout: float = 0.5
-    lost_frames_threshold: int = 1
-    reacquire_frames: int = 3
-    smoothing_alpha: float = 0.4
-    search_yaw_rate: float = 10.0  # legacy; superseded by the scan sweep below
+    max_vertical_speed: float = _FC.max_vertical_speed
+    yaw_dead_zone_deg: float = _FC.yaw_dead_zone_deg
+    vertical_dead_zone_deg: float = _FC.vertical_dead_zone_deg
+    size_dead_zone: float = _FC.size_dead_zone
+    lost_timeout: float = _FC.lost_timeout
+    observation_timeout: float = _FC.observation_timeout
+    lost_frames_threshold: int = _FC.lost_frames_threshold
+    reacquire_frames: int = _FC.reacquire_frames
+    smoothing_alpha: float = _FC.smoothing_alpha
+    search_yaw_rate: float = _FC.search_yaw_rate  # legacy; superseded by the scan sweep
     # SEARCH scan: instead of spinning a full 360 (which re-acquires the wrong drone,
     # e.g. our own follower), sweep a bounded window around the heading where the
     # target was lost. Left/right is a true yaw sweep; up/down is an altitude bob
     # (the camera is body-fixed, so vertical "look" is realized by changing height).
-    search_yaw_sweep_deg: float = 30.0       # left/right half-angle of the yaw scan
-    search_vertical_speed: float = 0.5       # m/s up/down bob amplitude (the ~45 deg look)
-    search_period_s: float = 8.0             # seconds for one full sweep cycle
-    control_rate_hz: float = 10.0
-    yaw_sign: float = 1.0
-    vertical_sign: float = 1.0
-    lost_command_memory_s: float = 0.0
+    search_yaw_sweep_deg: float = _FC.search_yaw_sweep_deg
+    search_vertical_speed: float = _FC.search_vertical_speed
+    search_period_s: float = _FC.search_period_s
+    control_rate_hz: float = _FC.control_rate_hz
+    yaw_sign: float = _FC.yaw_sign
+    vertical_sign: float = _FC.vertical_sign
+    lost_command_memory_s: float = _FC.lost_command_memory_s
 
     @classmethod
     def matched(
@@ -171,9 +175,17 @@ def normalize_mission_state(value: MissionState | str) -> tuple[MissionState, bo
     return MissionState.HOLD, False
 
 
+MIN_FOLLOWERS = 2
+# Sanity ceiling only — guards against a config typo (e.g. follower_count: 1000),
+# not a real engineering limit. Raise it if you genuinely need a longer chain.
+MAX_FOLLOWERS = 20
+
+
 def build_chain_config(follower_count: int) -> list[ChainLinkConfig]:
-    if follower_count < 2 or follower_count > 5:
-        raise ValueError('follower_count must be in range 2..5')
+    if follower_count < MIN_FOLLOWERS or follower_count > MAX_FOLLOWERS:
+        raise ValueError(
+            f'follower_count must be in range {MIN_FOLLOWERS}..{MAX_FOLLOWERS}'
+        )
     return [
         ChainLinkConfig(
             follower_id=f'follower_{index}',

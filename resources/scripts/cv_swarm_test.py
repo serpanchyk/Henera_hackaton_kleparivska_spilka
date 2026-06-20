@@ -40,6 +40,7 @@ from drone_sdk.follower_controller import (
     VisualObservation,
     build_chain_config,
 )
+from drone_sdk.config import CONFIG
 from drone_sdk.swarm_speeds import LEADER_CRUISE_SPEED_M_S, step_sleep_s
 from drone_sdk.two_led_cv import mask_for_state
 from henera_swarm.logging import ResultsLogger
@@ -47,41 +48,48 @@ from henera_swarm.perception import CVVisionProvider
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 
-FOLLOWER_COUNT = 3
-COMMON_ALT_M = 10.0
-EKF_SETTLE_S = 15.0
-HOVER_SETTLE_S = 8.0
-TAKEOFF_TIMEOUT_S = 35.0
-TAKEOFF_TOLERANCE_M = 1.5          # accept this far below target (SITL settles low)
-TAKEOFF_AIRBORNE_FRACTION = 0.6   # on timeout, proceed if at least this fraction of target
-CONTROL_HZ = 10.0
-BEACON_HZ = 20.0
-TRUTH_LOG_HZ = 1.0
-# Time cap. Overridable via env because a long converted mission route (e.g.
-# ~240 m) takes far longer than the default short turn pattern.
-WATCHDOG_S = float(os.environ.get('WATCHDOG_S', '300'))
-FINISH_BROADCAST_S = 15.0  # how long the leader blinks FINISH before landing
-FINISH_DESCENT_SPEED_MS = 0.6   # follower descent rate after a confirmed FINISH
-FINISH_DESCENT_TIMEOUT_S = 25.0 # cap on the descent before the follower task exits
-FINISH_GROUND_ALT_M = 1.2       # altitude at which the descent is considered done
-ACQUIRE_HOLD_S = 30.0      # leader hovers in place first so followers acquire + form up
+# Tunables come from config.yaml (drone_sdk/config.py). Only world layout and
+# the mission route geometry below stay hardcoded here.
+_RT = CONFIG.runtime
+_FORM = CONFIG.formation
+_PERC = CONFIG.perception
+
+FOLLOWER_COUNT = _RT.follower_count
+COMMON_ALT_M = _RT.common_alt_m
+EKF_SETTLE_S = _RT.ekf_settle_s
+HOVER_SETTLE_S = _RT.hover_settle_s
+TAKEOFF_TIMEOUT_S = _RT.takeoff_timeout_s
+TAKEOFF_TOLERANCE_M = _RT.takeoff_tolerance_m      # accept this far below target (SITL settles low)
+TAKEOFF_AIRBORNE_FRACTION = _RT.takeoff_airborne_fraction  # on timeout, proceed if at least this fraction of target
+CONTROL_HZ = _RT.control_hz
+BEACON_HZ = _RT.beacon_hz
+TRUTH_LOG_HZ = _RT.truth_log_hz
+# Time cap. The WATCHDOG_S env var still wins because a long converted mission
+# route (e.g. ~240 m) takes far longer than the default short turn pattern.
+WATCHDOG_S = float(os.environ.get('WATCHDOG_S', _RT.watchdog_s))
+FINISH_BROADCAST_S = _RT.finish_broadcast_s  # how long the leader blinks FINISH before landing
+FINISH_DESCENT_SPEED_MS = _RT.finish_descent_speed_ms   # follower descent rate after a confirmed FINISH
+FINISH_DESCENT_TIMEOUT_S = _RT.finish_descent_timeout_s # cap on the descent before the follower task exits
+FINISH_GROUND_ALT_M = _RT.finish_ground_alt_m       # altitude at which the descent is considered done
+ACQUIRE_HOLD_S = _RT.acquire_hold_s      # leader hovers in place first so followers acquire + form up
 REQUIRE_ALL_FOLLOWERS_ACQUIRED = True
-ROUTE_RECOVERY_PAUSE_S = 20.0
-ROUTE_RECOVERY_POLL_S = 0.5
-STEP_M = 1.0               # leader route step size
-# Leader cruise speed is the single shared knob (drone_sdk/swarm_speeds.py);
+ROUTE_RECOVERY_PAUSE_S = _RT.route_recovery_pause_s
+ROUTE_RECOVERY_POLL_S = _RT.route_recovery_poll_s
+STEP_M = _RT.step_m               # leader route step size
+# Leader cruise speed is the single shared knob (config.yaml speeds section);
 # the per-step sleep is derived from it so leader and followers stay matched.
 STEP_SLEEP_S = step_sleep_s(STEP_M)   # = STEP_M / LEADER_CRUISE_SPEED_M_S
-TRAIN_YAW_RAD = 3.7346
+TRAIN_YAW_RAD = _FORM.train_yaw_rad
 TRAIN_YAW_DEG = math.degrees(TRAIN_YAW_RAD)
-# Multi-leg route: fly LEG_M, turn TURN_DEG, repeat NUM_LEGS times.
+# Multi-leg route geometry (mission coordinates — kept in code, not config).
+# Fly LEG_M, turn TURN_DEG, repeat NUM_LEGS times.
 LEG_M = 10.0               # length of each straight leg
 TURN_DEG = 45.0            # heading change between legs
 NUM_LEGS = 3               # 3 x 10 m = 30 m total route
-SPAWN_Z_M = 1.4
-TRAIN_SPACING_M = 2.5
-ACQUIRE_MIN_TARGET_SIZE = 45.0
-ACQUIRE_MAX_TARGET_SIZE = 180.0
+SPAWN_Z_M = _FORM.spawn_z_m
+TRAIN_SPACING_M = _FORM.train_spacing_m
+ACQUIRE_MIN_TARGET_SIZE = _PERC.acquire_min_target_size
+ACQUIRE_MAX_TARGET_SIZE = _PERC.acquire_max_target_size
 SPAWN_LEADER_E = 127.0
 SPAWN_LEADER_N = 52.67
 SPAWNS = {

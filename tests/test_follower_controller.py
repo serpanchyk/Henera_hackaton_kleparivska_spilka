@@ -260,12 +260,16 @@ class FollowerControllerTests(unittest.TestCase):
         )
         self.assertEqual(build_chain_config(3)[2].target_id, 'follower_2')
         self.assertEqual(build_chain_config(5)[4].target_id, 'follower_4')
+        # Longer chains are supported (each follows the previous drone).
+        chain10 = build_chain_config(10)
+        self.assertEqual(len(chain10), 10)
+        self.assertEqual(chain10[9].target_id, 'follower_9')
 
     def test_chain_mapping_rejects_out_of_range(self):
         with self.assertRaises(ValueError):
             build_chain_config(1)
         with self.assertRaises(ValueError):
-            build_chain_config(6)
+            build_chain_config(21)
 
 
 class MockPosition:

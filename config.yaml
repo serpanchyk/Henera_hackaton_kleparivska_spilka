@@ -1,0 +1,86 @@
+# Falcon Gaze — central tunable configuration.
+#
+# Single source of truth for the swarm's tunable numbers. Code reads these via
+# drone_sdk/config.py (load_config() / CONFIG), so to retune the swarm you edit
+# here and nowhere else. Point the FALCON_CONFIG env var at another file to use
+# an alternative config without editing this one.
+#
+# NOT here (by design): world spawn coordinates and the leader's mission route
+# geometry — those stay with the code / mission folder respectively.
+
+# ── Swarm speeds ────────────────────────────────────────────────────────────
+# Leader cruise is the single knob for the whole swarm's pace. Follower forward
+# and reverse caps are derived from it via these ratios, so they stay matched
+# (a follower can close a gap but never dramatically outrun the leader, and it
+# backs off gently rather than slamming into reverse). CV tracking degrades at
+# high speed, so raise leader_cruise_m_s gradually.
+speeds:
+  leader_cruise_m_s: 1.0
+  follower_forward_ratio: 1.5   # follower max forward = leader_cruise * this
+  follower_reverse_ratio: 0.4   # follower max reverse = leader_cruise * this
+
+# ── Follower controller (vision -> velocity gains, dead zones, timeouts) ─────
+# Forward/reverse speed caps are NOT here — they come from `speeds` above.
+follower_control:
+  desired_target_size: 110.0    # target apparent size (px) the follower holds
+  kp_yaw: 1.0
+  kp_forward: 0.02
+  kp_vertical: 0.02
+  max_yaw_rate: 30.0            # deg/s
+  max_vertical_speed: 1.0       # m/s
+  yaw_dead_zone_deg: 1.0
+  vertical_dead_zone_deg: 1.0
+  size_dead_zone: 5.0           # px; ignore size error smaller than this
+  lost_timeout: 2.0             # s of no target before SEARCH
+  observation_timeout: 0.5      # s; older observations are treated as stale
+  lost_frames_threshold: 1
+  reacquire_frames: 3           # consecutive good frames before resuming FOLLOW
+  smoothing_alpha: 0.4          # command smoothing (0 = none, ->1 = sluggish)
+  search_yaw_rate: 10.0         # legacy; superseded by the scan sweep below
+  search_yaw_sweep_deg: 30.0    # half-angle of the bounded SEARCH yaw sweep
+  search_vertical_speed: 0.5    # m/s altitude bob during SEARCH
+  search_period_s: 8.0          # s for one full SEARCH sweep cycle
+  control_rate_hz: 10.0
+  yaw_sign: 1.0
+  vertical_sign: 1.0
+  lost_command_memory_s: 0.0    # s to coast on the last command after losing lock
+
+# ── Perception / acquisition thresholds ──────────────────────────────────────
+perception:
+  acquire_min_target_size: 45.0   # px; smaller -> target too far to lock
+  acquire_max_target_size: 180.0  # px; larger -> target too close to lock
+
+# ── Follower placement relative to the leader (the spawn train) ──────────────
+# Where the followers spawn behind the leader. World layout (the leader's own
+# spawn coordinates) stays in code; this only controls the train formation.
+formation:
+  train_spacing_m: 2.5      # gap between consecutive drones in the train
+  spawn_z_m: 1.4            # spawn altitude (m)
+  train_yaw_rad: 3.7346     # heading the train is laid out along
+
+# ── Mission runtime: rates, settle/timeout durations, FINISH/recovery timing ─
+runtime:
+  follower_count: 3
+  common_alt_m: 10.0            # leader/cruise altitude
+  ekf_settle_s: 15.0
+  hover_settle_s: 8.0
+  takeoff_timeout_s: 35.0
+  takeoff_tolerance_m: 1.5      # accept this far below target (SITL settles low)
+  takeoff_airborne_fraction: 0.6
+  control_hz: 10.0
+  beacon_hz: 20.0
+  truth_log_hz: 1.0
+  watchdog_s: 300.0             # overridable via the WATCHDOG_S env var
+  finish_broadcast_s: 15.0
+  finish_descent_speed_ms: 0.6
+  finish_descent_timeout_s: 25.0
+  finish_ground_alt_m: 1.2
+  acquire_hold_s: 30.0          # leader hovers first so followers form up
+  route_recovery_pause_s: 20.0
+  route_recovery_poll_s: 0.5
+  step_m: 1.0                   # leader route step size
+
+# ── MAVSDK ports (drone N = base + N) ────────────────────────────────────────
+ports:
+  mavsdk_udp_base: 14540
+  mavsdk_grpc_base: 50051

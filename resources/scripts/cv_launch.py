@@ -22,9 +22,19 @@ from henera_swarm.launch_utils import (
     train_positions,
 )
 
-TRAIN_YAW_RAD = 3.7346
-SPAWN_Z_M = 1.4
-TRAIN_SPACING_M = 2.5
+# Swarm size + train formation come from config.yaml so the drones SPAWNED here
+# match the count the control script (cv_swarm_test.py) CONNECTS to. Without this
+# they drift: bumping follower_count alone leaves the controller waiting on
+# drones that were never launched.
+_REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+from drone_sdk.config import CONFIG
+
+FOLLOWER_COUNT = CONFIG.runtime.follower_count
+TRAIN_YAW_RAD = CONFIG.formation.train_yaw_rad
+SPAWN_Z_M = CONFIG.formation.spawn_z_m
+TRAIN_SPACING_M = CONFIG.formation.train_spacing_m
 
 
 def cv_test_process():
@@ -43,7 +53,7 @@ def generate_launch_description():
             z=SPAWN_Z_M,
             yaw_rad=TRAIN_YAW_RAD,
             spacing_m=TRAIN_SPACING_M,
-            follower_count=3,
+            follower_count=FOLLOWER_COUNT,
         )
     )
 
@@ -51,7 +61,7 @@ def generate_launch_description():
     leader = poses[0]
     actions.append(px4_instance(leader.instance_id, leader.x, leader.y, leader.z, leader.yaw_rad))
 
-    # t=5s: drones 1,2,3 — attach to running Gazebo
+    # t=5s: followers — attach to running Gazebo
     for pose in poses[1:]:
         actions.append(TimerAction(
             period=5.0,
